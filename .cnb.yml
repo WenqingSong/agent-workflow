@@ -1,24 +1,15 @@
 $:
   vscode:
-    - name: goland-dev
+    - name: workflow-dev
       runner:
         cpus: 8
       services:
         - vscode
-        - docker
-
       docker:
         image: docker.cnb.cool/arthur-cloud-native/jetbrains/goland:5.0.1
-
       stages:
-        - name: start-dependencies
-          script: |
-            docker compose up -d
-            bash -c 'source scripts/lib.sh; wait_for_deps'
-      
-        - name: environment-check
+        - name: verify-engine
           script: |
             go version
             git --version
-            docker version
-            docker compose version
+            GOWORK=off go -C .agent/engine test ./...
