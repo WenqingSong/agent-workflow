@@ -7,7 +7,7 @@
 
 ## 1. 边界
 
-- **只适用于已激活的 Workflow Role**：TaskBuilder、Analyst、Coder、Cleaner、OwnerGate、Deliverer。
+- **只适用于已激活的 Workflow Role**：TaskBuilder、Analyst、Architect、Coder、Cleaner、OwnerGate、Deliverer。
 - **普通 Agent 不自动加载**：未按 §2 激活的 Session 不因本文件存在而成为 Workflow Role。
 - **不是宿主根 `AGENTS.md` 的替代物**：宿主业务规范仍由宿主自己的 `AGENTS.md` 承载。
 - **必须由 Role 显式读取**：本方案不依赖任何 Agent 平台的目录级自动发现。不同平台的规则加载机制不同，本文件不假设某平台一定会或一定不会自动加载；使用非 `AGENTS.md` 文件名并强制显式读取，是为了降低规则污染风险，不构成绝对不可绕过的隔离保证。
@@ -17,13 +17,15 @@
 
 以下三条**同时满足**时，Session 才按 Workflow Role 运行：
 
-1. Owner 或调用方在本次指令中**明确指定角色**（TaskBuilder / Analyst / Coder / Cleaner / OwnerGate / Deliverer）；
+1. Owner 或调用方在本次指令中**明确指定角色**（TaskBuilder / Analyst / Architect / Coder / Cleaner / OwnerGate / Deliverer）；
 2. **指定 Task 目录**（`.agent/tasks/<task-slug>/`），或明确要求初始化 Task；
 3. 当前 Session **以该角色职责运行**：输出与实际操作都承担该角色职责。
 
 三条不同时满足，即视为**普通 Agent Session**。判定依据是指令的实际内容，而不是输出中是否出现 "Workflow" 字样；普通 Agent 在解释文档时提到 Workflow 属正常行为。
 
 这是 **Agent 行为协议**，不是 Engine 已具备的 Session 身份认证能力。Engine 无法识别当前 Session 是否真的按角色运行。
+
+`ARCHITECT` 路线有一个直接后果：该路线的结构验证由被明确指定为 ARCHITECT OwnerGate 的**新 Session** 执行，Engine 只校验 `review.status` / `review.target` / Tail / `handoffReady` 等 Git 与 State 事实，**不能**证明验证者不是 Architect 本人，也不能证明验证真的发生。独立性由 Role Prompt、Session 隔离与 `findings.md` 中的真实证据执行，不得宣称 Engine 已具备身份认证能力。
 
 ## 3. 普通 Agent Session 的范围
 
