@@ -1,12 +1,13 @@
-# Workflow 循环熔断规范（V3.1.0）
+# Workflow 循环熔断规范（V3.1.0，V3.2.0 七角色一致性修订）
 
-> 适用对象：所有已激活的 Workflow Role Session——TaskBuilder、Analyst、Coder、Cleaner、OwnerGate、Deliverer。
+> 适用对象：所有已激活的 Workflow Role Session——TaskBuilder、Analyst、Architect、Coder、Cleaner、OwnerGate、Deliverer。
 > 规范地位：本文是「同一 Task 同一根因最多两轮阻塞往返」以及 `loop-ledger.md` / `danger-report.md` 两个证据文件的**唯一规范事实源**。角色 Prompt 只写触发点与停止规则，不复制计数细节。
+> 修订说明：V3.2.0 只把适用范围与恢复入口补齐到当前七角色，**不改变**已验收的两轮预算、segment、append-only 账本、DANGER 停机与 Owner 恢复语义。
 
 ## 0. 边界与权威
 
-- 本规范**不新增** `state.yaml` 字段、Gate、调度器或第七个角色；它复用既有 `blocked` 状态。
-- 本规范**不改变**任何角色的 Git Authority、Gate 前置条件、NORMAL / COMPLEX 的角色顺序，也不提前实现 ARCHITECT。
+- 本规范**不新增** `state.yaml` 字段、Gate、调度器或额外角色（当前为七角色）；它复用既有 `blocked` 状态。
+- 本规范**不改变**任何角色的 Git Authority、Gate 前置条件、NORMAL / COMPLEX / ARCHITECT 的角色顺序，也不改变 ARCHITECT 的 OwnerGate V1/V2 阶段划分。Architect 与 ARCHITECT 路线下的 OwnerGate V1 已存在，本文按七角色适用。
 - `state.yaml` 仍是唯一的机器状态权威。账本只记录「已经发生的循环事件」，不是第二套状态权威，也不得声明 `review` / `owner` / `delivery` 结论。
 - 事实冲突时（账本与 `state.yaml` 在阻塞事实上不一致），以 `blocked.active=true` 为准，并停下报告实际状态；不得用账本内容解除 `blocked`。
 
@@ -130,6 +131,7 @@ loop_key = <CATEGORY>:<root-cause-slug>
 - 账本无法写入、commit 失败、push 失败或远端未同步 → **禁止继续发问**，立即输出 `RESULT=BLOCKED`，说明实际持久化状态与失败命令。
 - 不得把「本地已写、远端未同步」当作已记账。
 - 若请求已经发出而记账失败，恢复持久化后必须补记，并在 `request_summary` 标注 `UNRECORDED_REQUEST`，按**保守原则**计入已消耗轮次（不得当作未发生）。
+- 第 5～7 步的提交类型是 `FORCED_EVIDENCE`（`.agent/specs/WorkflowGitLifecycle.md` §2）：允许在角色交接前发生，但只含 `loop-ledger.md`（必要时 `state.yaml`），不得混入业务代码、测试、Contract、Task 或 Design，也不构成 HANDOFF。
 
 ## 6. `loop-ledger.md` 数据契约
 
@@ -323,6 +325,7 @@ loop_key = <CATEGORY>:<root-cause-slug>
 - 若写盘或 push 出错，报告**无法持久化**的实际状态，输出 `RESULT=BLOCKED`（附 `PERSISTENCE_FAILURE`），**不得**假装 DANGER 已成功记录。
 - DANGER 后即使某个旧 Gate 曾经通过，也不得直接复用该结果继续推进。
 - 工作区存在其他角色未提交的变更时，不得一并提交、不得 `stash` 丢弃；在 DANGER 报告中如实记录其存在。
+- 第 6～7 步的提交类型是 `FORCED_EVIDENCE`：只允许 `loop-ledger.md`、`danger-report.md`、`state.yaml`；push 后必须核验远端包含新事件与新报告。该提交不构成 HANDOFF，也不得前移 `review.target` / `contract.target` / `owner.review_target`。
 
 ## 9. 跨 Session 与幂等
 
@@ -382,7 +385,7 @@ loop_key = <CATEGORY>:<root-cause-slug>
 | Coder | 重新执行 `coder-start` |
 | Cleaner | 重新执行 `cleaner-start` |
 | Analyst | 按 Contract 流程重新取得必要的 Owner 批准；不得把尚未批准的 Contract 交给 Coder。若 Owner 修改了 AC，先由 TaskBuilder 更新 Task |
-| OwnerGate | NORMAL / COMPLEX 使用 `owner-gate-start`；ARCHITECT 若仍需重新做独立架构验证，必须先执行其承担的 `cleaner-start` 验证阶段（ARCHITECT 接入由 P05 负责，本规范不实现该角色） |
+| OwnerGate | NORMAL / COMPLEX 使用 `owner-gate-start`；ARCHITECT 先重新执行其承担的 `cleaner-start` V1 结构验证并持久化，通过后再运行 `owner-gate-start` 进入 V2 |
 | Deliverer | 重新执行 `delivery-start`；必要时重新绑定 `review_target` / `feature_head` / `develop_base`，再执行 `merge-ready` |
 | TaskBuilder | 按 NORMAL / COMPLEX / ARCHITECT 各自的出口规则恢复，不得强行统一使用 `coder-start` |
 
@@ -392,6 +395,7 @@ loop_key = <CATEGORY>:<root-cause-slug>
 |---|---|---|
 | TaskBuilder | 需要 Owner 澄清会改变 Task 边界的关键业务规则（`OWNER_DECISION`），或需要退回上游修订任务定义 | `N=2` 时不得再次请求同一决定，转 DANGER |
 | Analyst | 请求 Owner Contract 决定（`OWNER_DECISION`）、提出 Contract 修订（`CONTRACT_REVISION`）、退回 Coder / Owner（`ROLE_REPAIR`） | `N=2` 时不得再次请求或再次修订，转 DANGER |
+| Architect | 请求 Contract 修订、请求 Owner 决定、退回 Analyst（`ROLE_REPAIR` / `CONTRACT_REVISION`）；收到 OwnerGate V1 的结构验证退回不重复记账（由退回方记账） | `N=2` 时不得再次请求或修订，转 DANGER |
 | Coder | 请求 Contract 修订、请求 Owner 决定、退回 Analyst（`ROLE_REPAIR` / `CONTRACT_REVISION`） | `N=2` 时不得再次请求；不得自行增加预算或换 `loop_key` 规避 |
 | Cleaner | 发出 `CHANGES_REQUIRED` 退回 Coder（`ROLE_REPAIR`）、请求 Contract 修订、请求 Owner 决定审查标准 | `N=2` 时不得再次退回，转 DANGER |
 | OwnerGate | 请求 Owner 核心逻辑决定（`OWNER_DECISION`） | `N=2` 时不得再次请求同一决定，转 DANGER |

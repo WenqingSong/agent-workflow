@@ -19,7 +19,7 @@ Owner：做决定并最终接受
 
 Owner 不是第七个 Agent，而是整个 Workflow 的 **Decision Authority + Shared Repository Authority**。
 
-共享流程、状态和文件规则见 `.agent/specs/AgentCollaborationSpecification.md`。各角色 Prompt 只说明本角色怎样工作，不重复整套工程制度。
+共享流程、状态和文件规则见 `.agent/specs/AgentCollaborationSpecification.md`。Git 的 Stage / Commit / Push / Gate / HANDOFF 时机与七角色例外矩阵见 `.agent/specs/WorkflowGitLifecycle.md`；跨 Session HANDOFF 字段见 `.agent/specs/WorkflowHandoffContract.md`。各角色 Prompt 只说明本角色怎样工作，不重复整套工程制度。
 
 本文件描述的角色边界、Gate 与 Handoff 约束只适用于按 `.agent/specs/WorkflowAgentDirective.md` §2 明确激活的 Workflow Role Session。普通 Agent Session 不因本文件存在而自动获得 Workflow Role 职责，也不自动受其 Git、Gate 与 Artifact 约束。
 
@@ -58,6 +58,8 @@ TaskBuilder 回答：本次究竟交付什么，怎样判断完成？
 
 TaskBuilder 默认不拥有分支生命周期，目标 branch 由 Owner 预先准备。唯一例外是 `TB-BRANCH-1`：Owner 逐项给出完整分支名、起始分支、起始 Commit SHA、Task Slug 并明确授权后，TaskBuilder 可为**当前任务**创建初始 Feature Branch 并完成首次 Commit / Push。TaskBuilder 仍禁止删除或重命名分支、Merge、Rebase、Force Push、Push `main` 或共享集成分支；该例外不改变 Engine、Gate 与 `state.yaml` schema。
 
+TaskBuilder 的提交类型是 `BOOTSTRAP`：只允许任务初始 Artifact（`task.md`、`state.yaml` 及该目录内约定文件），且必须在本任务定义、状态初始化与（如执行）`TB-BRANCH-1` 预检全部完成后提交。不得把未写完的 `task.md` 草稿、探索性修改或「先存一下」的修改作为进度提交；出站完成前不得 HANDOFF。
+
 ## 4. Analyst
 
 Analyst 回答：复杂问题有哪些约束，可行方案是什么，哪些性质必须保持？
@@ -76,6 +78,8 @@ Analyst 回答：复杂问题有哪些约束，可行方案是什么，哪些性
 
 不负责：修改生产代码、测试或任务目标；不能批准自己的推荐方案；除 Registry-only 例外（仅 `.agent/workflow.yaml` 已声明的 Registry 文件）外，不修改 shared develop 上的其他任何内容。
 
+Analyst 的提交类型：A1 是 `EVIDENCE`（`contract.md` + 必要的 `docs/design/*`，不含 `state.yaml`），A2 是 `METADATA`（只含 `state.yaml`），共享资源是独立的 `REGISTRY_ONLY`。A1 只有在 Contract 内容与 Owner 明确批准一致、Design 已按批准内容更新、且不含业务代码时才允许提交；A2 只有在 A1 的完整 SHA 可解析、`contract.target` 写入正确时才允许提交。三者都不是 HANDOFF。
+
 Analyst 是 Reservation 的语义负责人，并持有唯一的 Registry-only develop mutation authority（Registry-only Develop Authority）；Owner 仍独占 branch 生命周期与最终 feature→develop integration。
 
 Analyst 的 Registry-only shared-develop mutation 仅限 `.agent/workflow.yaml` 声明的 Registry 文件（当前 my-shop 为 `.agent/registry/migrations.md` 与 `.agent/registry/error-codes.md`）。正常任务期间 Analyst 只读 `.agent/workflow.yaml`，不修改它。
@@ -92,6 +96,8 @@ Architect 回答：在已批准 Contract 下，系统应该具有什么结构，
 - 执行真实构建、格式化、静态检查与结构测试；未执行的业务检查标记 `NOT_EXECUTED`，不得写成 PASS；
 - 两段式提交：D1（结构快照 + `architecture.md` + 结构测试）→ D2（只写 `state.review.status=PENDING`、`review.target=<D1 完整 SHA>`），D1、D2 都 commit + push 并核验远端同步，再运行 `cleaner-start`；
 - `cleaner-start` `PASS` 后 HANDOFF → OwnerGate（ARCHITECT 结构验证阶段，新 Session）。
+
+Architect 的提交类型：D1 是 `EVIDENCE`（结构骨架 + `architecture.md` + 结构测试，不含 `state.yaml`），D2 是 `METADATA`（只含 `state.yaml`）。D1 必须在构建、格式化、静态检查与结构测试真实执行后才允许提交；未实现的业务行为必须标 `NOT_EXECUTED`。`architecture.md` 属于实质结构事实，D1 之后修改它必须形成新的 D1；D1/D2 都不是 HANDOFF。
 
 不负责：完整业务功能、数据库 Migration、未获批准的 DB Schema 变更、新外部依赖、未获批准的构建 / 部署模型变化；也不负责写 `CLEAN`、`ACCEPTED`、`PASS`，不自行完成或代替结构验证。
 
@@ -113,7 +119,7 @@ Coder 回答：怎样在已确定的范围和约束内完成实现？
 - 修复 Cleaner 指定的 Finding 并提供回归证据；
 - 只使用 APPROVED Contract 中的已分配全局资源；新增需求走 Contract Revision，不得自行推断编号（含 `max+1`）。
 
-发起 Review Request（两段式提交）：C1（业务代码 + 测试，先完成验证再提交）→ C2（只改 `state.yaml` 写入 `review.status=PENDING`、`review.target=<C1 完整 SHA>`；不得混入业务代码）。C1、C2 都必须 Commit 并 Push 当前 feature，确保工作区 clean 且 local == remote，再运行 `cleaner-start`，`PASS` 后才 HANDOFF Cleaner。Cleaner 审 C1，不是 C2。
+发起 Review Request（两段式提交）：C1（业务代码 + 测试，先完成验证再提交）→ C2（只改 `state.yaml` 写入 `review.status=PENDING`、`review.target=<C1 完整 SHA>`；不得混入业务代码）。C1 属于 `EVIDENCE` 类型：只有在 AC 行为完整、适用格式化/测试/静态检查/构建真实执行、无未完成占位、无其他角色 artifacts 时才允许提交；未验证的临时实现不得作为 C1。C1、C2 都必须 Commit 并 Push 当前 feature，确保工作区 clean 且远端 SHA 已用 `git ls-remote` 核验，再运行 `cleaner-start`，`PASS` 后才 HANDOFF Cleaner。Cleaner 审 C1，不是 C2。
 
 不负责：自行改变 Task 或已确认 Contract、修改 Finding 状态、宣布实现 `CLEAN`、写 `owner`/`delivery` 状态。
 
@@ -141,6 +147,8 @@ Cleaner 回答：完整相关变更是否满足任务，测试是否真的能发
 默认不修改生产代码或测试；发现问题交 Coder 修复。Cleaner 不改变任务标准，也不替 Owner 最终接受，不写 `owner` 状态（由 OwnerGate 负责）。
 
 结果：`CLEAN`、`CHANGES_REQUIRED` 或 `BLOCKED`。
+
+Cleaner 的两种实质结论都使用 `ROLE_ARTIFACT` 提交：`CLEAN` 必须落 `findings.md`、`core-logic.md`、`review.status=CLEAN`（`review.target` 保持 C1），并在 Push + 远端核验后通过 `owner-gate-start` 才 HANDOFF；`CHANGES_REQUIRED` 必须落真实 Finding 与 `review.status=CHANGES_REQUIRED`（`review.target` 仍为 C1），Commit + Push + 远端核验后退回 Coder，不运行下一角色入口 Gate。失败证据是必要交付，不是「未完成进度」；但任何角色都不得把失败结论写成 `CLEAN`。
 
 **路线边界**：`ARCHITECT` 不经过 Cleaner。结构成果的独立验证由被明确指定为该路线 OwnerGate 的新 Session 在 V1 阶段执行（入口 `cleaner-start`）；Cleaner 不为结构成果形成 `CLEAN`，也不得把 `ARCHITECT` 的 `CLEAN` 复用为 `COMPLEX` 的审查结论。被错误地以 `ARCHITECT` 任务激活时输出 `BLOCKED` 并指向 OwnerGate V1。
 
@@ -183,6 +191,8 @@ Deliverer 回答：已经通过审查的里程碑，能否在要求的环境中�
 - 在 `delivery.md` 记录环境、结果、证据、未验证项和剩余风险；
 - 验收结论持久化后 Commit + Push 当前 feature、核验远端同步，再运行 `merge-ready`；只有 `merge-ready` `PASS` 才允许向 Owner 输出可集成结论。
 
+Deliverer 的证据提交类型是 `ROLE_ARTIFACT`：`PASS` 与 `FAIL` / `BLOCKED` 都必须把真实的 `delivery.status`、三个不可变 SHA 与未执行项写入 `delivery.md` / `state.yaml`，Commit + Push + 远端核验后才允许 `merge-ready`（仅 `PASS`）或退回（`FAIL` / `BLOCKED`，不运行 `merge-ready`）。失败验收不得保留旧 `PASS`，也不得写成「可集成」。
+
 Deliverer 可使用临时目录、临时 worktree、detached HEAD 等本地集成环境验证 `develop_base + feature_head`，但禁止创建/推送永久 integration branch、禁止 push develop、禁止最终 merge，也不创建 Release。
 
 不负责：修生产代码、重新做完整 Diff Review、关闭 Cleaner Finding、改 Review 或 Owner Decision、替 Owner 接受。`ARCHITECT` 下不得把结构测试通过等同于业务系统已实现，必须逐项说明 `NOT_EXECUTED`。
@@ -203,7 +213,9 @@ OwnerGate → gate delivery-start   → HANDOFF Deliverer
 Deliverer → gate merge-ready      → HANDOFF Owner
 ```
 
-每条 Handoff 前的统一出站顺序：显式 stage 本角色 owned artifacts → commit → push 当前 feature → 确认 working tree clean 且 local == `origin/<current-feature>` → 运行 Gate → `PASS` 才 HANDOFF。`CHANGES_REQUIRED` 与 Owner `REJECT` 的退回同样必须 Commit + Push，只是不经过下一角色入口 Gate。
+每条 Handoff 前的统一出站顺序：本阶段验证完成 → `git status --short` / `git diff` 检查归属 → 显式 stage 本角色 owned artifacts → `git diff --cached --name-status` 核对 → commit（合法类型见 `.agent/specs/WorkflowGitLifecycle.md` §2）→ 普通 push 当前 feature → `git ls-remote` 核验远端 SHA == 本地 HEAD 且 working tree clean → 运行 Gate → `PASS` 才 HANDOFF。`CHANGES_REQUIRED`、Owner `REJECT`、Deliverer `FAIL` / `BLOCKED` 与 DANGER 的退回同样必须 Commit + Push + 远端核验，只是不经过下一角色入口 Gate。
+
+不得把未完成、未验证的工作作为 `PROGRESS` 提交；A1 / C1 / D1 等中间 Evidence Commit 只有在满足 Git Lifecycle §4.3 的完成条件时才允许存在。Push 失败、远端 SHA 不一致、工作区 dirty 或 Gate `FAIL` 时，不得 HANDOFF、不得宣称远端已同步；按 Git Lifecycle §8 处置。
 
 TaskBuilder 没有专用入口 Gate：它的通用出口是 Commit + Push + 远端同步核验，不是 Gate。`NORMAL` 在上述出站收尾后以既有 `coder-start` 作为 Coder 入口 Gate 的提前自检（`contract.status = NOT_REQUIRED`、无共享 Registry 预留）；`COMPLEX` / `ARCHITECT` 在 `contract.status = PENDING` 时直接交 Analyst，不运行 `coder-start`。Analyst 批准 Contract 后，由后续角色按各自入口 Gate 继续；下游 Coder / Architect 开工前仍须确认自己的入口 Gate。
 
