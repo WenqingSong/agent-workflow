@@ -20,6 +20,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 TOOL = REPO / ".agent/adoption/workflow-adoption"
+FORMAL_REPOSITORY = "https://cnb.cool/framework-station/agent-workflow"
 ROLE_PROMPTS = (
     "TaskBuilderPrompt.md",
     "AnalystAgent.md",
@@ -91,18 +92,47 @@ def commit_all(root: Path, message: str) -> str:
     return git(root, "rev-parse", "HEAD")
 
 
-def copy_source(dest: Path) -> str:
-    shutil.copytree(
-        REPO,
-        dest,
-        ignore=shutil.ignore_patterns(
-            ".git",
-            "tmp.md",
-            "__pycache__",
-            "*.pyc",
-            ".agent/bin/workflow-check",
-        ),
+def tracked_source_paths(root: Path) -> list[str]:
+    """返回进入 Fixture 的源文件集合：Git tracked 文件。
+
+    正式 `workflow-adoption dist` 也只打包 tracked 文件，因此 Fixture 的输入
+    必须与「一个可分发 Commit 的源码快照」严格一致。
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "-z", "--cached"],
+        capture_output=True,
     )
+    if proc.returncode != 0:
+        raise AssertionError(
+            f"git ls-files 失败（{root}）: {proc.stderr.decode('utf-8', 'replace').strip()}"
+        )
+    return [item for item in proc.stdout.decode("utf-8").split("\0") if item]
+
+
+def copy_source(dest: Path, root: Path | None = None) -> str:
+    """用 Git tracked 文件快照构造临时源仓库（默认取本仓库）。
+
+    真实 `.cnb.yml` 的顺序是 tag-guard -> release-context -> engine-verification
+    -> adoption-e2e，所以本测试运行时仓库里已经存在 guard / repository 阶段写入的
+    `dist/reports/*.json`。这些是 CI 生成产物而非上游源码；旧实现复制整个工作树
+    再 `git add -A`，会把它们变成 Fixture 的 tracked 文件，触发
+    `SOURCE_UNCLASSIFIED`。
+
+    这里隔离的是 Fixture 的输入（只复制 tracked 文件），不改变正式 Distribution
+    的任何分类 / 归档安全 / 来源验证规则：未分类的 tracked 源文件仍必须被拒绝。
+    """
+    source_root = Path(root or REPO).resolve()
+    dest.mkdir(parents=True)
+    for relative in tracked_source_paths(source_root):
+        src = source_root / relative
+        dst = dest / relative
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.is_symlink():
+            os.symlink(os.readlink(src), dst)
+        elif src.is_file():
+            shutil.copy2(src, dst)
+        else:
+            raise AssertionError(f"Git tracked 文件在磁盘上缺失: {relative}（{source_root}）")
     init_git(dest, "source")
     return commit_all(dest, "source baseline")
 
@@ -361,6 +391,166 @@ class DistributionContractTests(unittest.TestCase):
         proc = run_tool("inspect", "--package", str(archive2), "--json")
         self.assertNotEqual(proc.returncode, 0)
         self.assertEqual(tool_json(proc)["error_code"], "ARCHIVE_SYMLINK")
+
+
+def directory_state(root: Path) -> dict[str, tuple[int, int, str]]:
+    """记录目录下每个文件的大小 / mtime / SHA256，用于证明产物未被改写。"""
+    state: dict[str, tuple[int, int, str]] = {}
+    if not root.exists():
+        return state
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            stat = path.stat()
+            state[path.relative_to(root).as_posix()] = (
+                stat.st_size,
+                stat.st_mtime_ns,
+                sha256_file(path),
+            )
+    return state
+
+
+class CiGeneratedArtifactIsolationTests(unittest.TestCase):
+    """真实 .cnb.yml 顺序下 Fixture 的源码输入隔离。
+
+    tag-guard / release-context 阶段在 adoption-e2e 之前写入 `dist/reports/*.json`；
+    Fixture 只能把 Git tracked 文件当作上游源码，CI 生成产物不得通过 `git add -A`
+    隐式进入 Fixture。正式 Distribution 的 fail-closed 分类规则必须保持不变。
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="adoption-ci-order-test-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.upstream = self.tmp / "upstream"
+        self.upstream_commit = copy_source(self.upstream)
+        run(["git", "-C", str(self.upstream), "remote", "add", "origin", FORMAL_REPOSITORY])
+
+    def _report(self, relative: str, payload: dict) -> None:
+        write(self.upstream / relative, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+    def _fixture(self, name: str) -> tuple[Path, dict]:
+        source = self.tmp / f"fixture-{name}"
+        copy_source(source, root=self.upstream)
+        tracked = git(source, "ls-files").splitlines()
+        self.assertFalse(
+            [path for path in tracked if path.startswith("dist/")],
+            f"CI 生成产物进入了 Fixture: {tracked}",
+        )
+        self.assertEqual(tracked, tracked_source_paths(self.upstream))
+        data = dist(source, self.tmp / f"out-{name}")
+        self.assertEqual(data["status"], "DIST_OK")
+        with tarfile.open(data["archive"], "r:gz") as tar:
+            names = tar.getnames()
+        self.assertFalse([name for name in names if "/dist/" in name], names)
+        return source, data
+
+    def test_clean_source_tree_is_distributable(self) -> None:
+        source, data = self._fixture("clean")
+        self.assertEqual(data["source_commit"], git(source, "rev-parse", "HEAD"))
+        self.assertGreater(data["file_count"], 0)
+
+    def test_guard_report_alone_does_not_enter_fixture(self) -> None:
+        self._report("dist/reports/guard.json", {"status": "GUARD_OK", "tag": "v3.1.0"})
+        self._fixture("guard")
+
+    def test_guard_and_release_context_reports_do_not_enter_fixture(self) -> None:
+        self._report("dist/reports/guard.json", {"status": "GUARD_OK", "tag": "v3.1.0"})
+        self._report(
+            "dist/reports/release-context.json",
+            {"status": "PASS", "repository_mode": "formal"},
+        )
+        self._fixture("context")
+
+    def test_other_generated_artifacts_do_not_enter_fixture(self) -> None:
+        for relative in (
+            "dist/reports/local-verification.json",
+            "dist/reports/snapshot.json",
+            "dist/reports/expected-assets.json",
+            "dist/reports/pipeline-coverage.json",
+            "dist/expected/SHA256SUMS",
+            "dist/workflow-check_3.1.0_linux_amd64",
+            "dist/build.log",
+            "expected/agent-workflow-src.tar.gz",
+        ):
+            write(self.upstream / relative, "{}\n")
+        self._fixture("artifacts")
+
+    def test_tracked_unclassified_source_is_still_rejected(self) -> None:
+        source = self.tmp / "unclassified-source"
+        copy_source(source)
+        write(source / "notes/unknown-source.txt", "unknown origin\n")
+        commit_all(source, "unknown tracked source")
+        proc = run_tool(
+            "dist",
+            "--source",
+            str(source),
+            "--output",
+            str(self.tmp / "out-unclassified"),
+            "--json",
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        data = tool_json(proc)
+        self.assertEqual(data["error_code"], "SOURCE_UNCLASSIFIED")
+        self.assertIn("notes/unknown-source.txt", data["error_details"]["unclassified"])
+
+    def test_ci_ordered_release_stages_do_not_poison_fixture(self) -> None:
+        # 真实 .cnb.yml：tag-guard -> release-context -> adoption-e2e
+        release_tool = REPO / "scripts/release/release.py"
+        commit = self.upstream_commit
+        run(["git", "-C", str(self.upstream), "tag", "-a", "v3.1.0", "-m", "ci order fixture"])
+        env = {key: value for key, value in os.environ.items() if not key.startswith("CNB_")}
+        env.update(CNB_BRANCH="v3.1.0", CNB_COMMIT=commit)
+        for args in (
+            (
+                "guard",
+                "--repo",
+                ".",
+                "--tag",
+                "v3.1.0",
+                "--expected-commit",
+                commit,
+                "--expected-commit-source",
+                "CNB_COMMIT",
+                "--report",
+                "dist/reports/guard.json",
+                "--json",
+            ),
+            (
+                "repository",
+                "--repo",
+                ".",
+                "--tag",
+                "v3.1.0",
+                "--report",
+                "dist/reports/release-context.json",
+                "--json",
+            ),
+        ):
+            run([sys.executable, str(release_tool), *args], cwd=self.upstream, env=env)
+
+        reports = {
+            "dist/reports/guard.json": "GUARD_OK",
+            "dist/reports/release-context.json": "PASS",
+        }
+        for relative, expected in reports.items():
+            payload = json.loads((self.upstream / relative).read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], expected, relative)
+        # CI 生成产物在真实仓库里必须是未跟踪文件；否则本用例并未构造出污染形态。
+        self.assertEqual(git(self.upstream, "ls-files", "dist"), "")
+        before = directory_state(self.upstream)
+
+        self._fixture("ci-order")
+
+        self.assertEqual(directory_state(self.upstream), before, "上游阶段报告被 Fixture 改写")
+
+    def test_workspace_reports_are_not_rewritten(self) -> None:
+        reports = REPO / "dist"
+        before = directory_state(reports)
+        status_before = git(REPO, "status", "--porcelain")
+        source = self.tmp / "fixture-workspace"
+        copy_source(source)
+        dist(source, self.tmp / "out-workspace")
+        self.assertEqual(directory_state(reports), before, "原工作区生成报告被重写或删除")
+        self.assertEqual(git(REPO, "status", "--porcelain"), status_before)
 
 
 class InstallE2ETests(unittest.TestCase):
