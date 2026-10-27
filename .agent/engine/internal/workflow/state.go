@@ -18,6 +18,38 @@ const SchemaV3 = 3
 // 读取后 runtime normalize 为 generic reservations，绝不写回磁盘。
 const SchemaV2 = 2
 
+// Route 是 task 路线的合法枚举（V3.2.0 起 state.yaml 的可选决策事实）。
+//
+// route 是「本任务走哪条工作流」的唯一机器权威源；task.md 的 `## Complexity`
+// 只保留供人阅读的同一事实。两者不一致必须 fail-closed，且 route 缺失的历史任务
+// 不得被 Engine 反推为任何具体路线。
+type Route = string
+
+const (
+	RouteNormal    Route = "NORMAL"
+	RouteComplex   Route = "COMPLEX"
+	RouteArchitect Route = "ARCHITECT"
+)
+
+var routeSet = map[Route]struct{}{
+	RouteNormal:    {},
+	RouteComplex:   {},
+	RouteArchitect: {},
+}
+
+// ValidRoute 报告 r 是否为合法 route。空串表示「该任务未记录路线事实」（Legacy）。
+func ValidRoute(r string) bool {
+	_, ok := routeSet[r]
+	return ok
+}
+
+// RouteRequiresContractApproval 报告该路线是否要求独立 Contract 审批证据。
+// NORMAL 是唯一不需要独立 Contract 的路线；ARCHITECT 与 COMPLEX 都必须先经
+// Analyst 起草、Owner 批准的 Contract，ARCHITECT 的 Contract 还须限定结构交付。
+func RouteRequiresContractApproval(r Route) bool {
+	return r == RouteComplex || r == RouteArchitect
+}
+
 // resourceKindPattern 约束 resource kind 必须是稳定机器 key（lower_snake_case）。
 // 非法 kind 是 Workflow State / Config 的 ERROR（exit 2），不是业务 Gate FAIL。
 var resourceKindPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -163,14 +195,18 @@ type Blocked struct {
 
 // State 是 Workflow V2 state.yaml 的结构化表示。
 type State struct {
-	SchemaVersion int       `yaml:"schema_version"`
-	TaskID        string    `yaml:"task_id"`
-	Contract      Contract  `yaml:"contract"`
-	Resources     Resources `yaml:"resources"`
-	Review        Review    `yaml:"review"`
-	Owner         Owner     `yaml:"owner"`
-	Delivery      Delivery  `yaml:"delivery"`
-	Blocked       Blocked   `yaml:"blocked"`
+	SchemaVersion int `yaml:"schema_version"`
+	// Route 是可选路线事实：NORMAL / COMPLEX / ARCHITECT。
+	// 省略表示历史任务未记录路线（Legacy），Engine 不推断其具体路线，
+	// 也不会因此放宽任何与路线相关的 Gate。
+	Route     Route     `yaml:"route,omitempty"`
+	TaskID    string    `yaml:"task_id"`
+	Contract  Contract  `yaml:"contract"`
+	Resources Resources `yaml:"resources"`
+	Review    Review    `yaml:"review"`
+	Owner     Owner     `yaml:"owner"`
+	Delivery  Delivery  `yaml:"delivery"`
+	Blocked   Blocked   `yaml:"blocked"`
 }
 
 // HasRequiredResources 报告 Task 是否声明了任何全局资源需求。

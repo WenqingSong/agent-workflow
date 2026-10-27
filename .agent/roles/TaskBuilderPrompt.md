@@ -131,7 +131,7 @@ extra_instruction: <可选>
 | `BASE_MISMATCH` | detached HEAD、当前分支 / HEAD 与授权起始分支 / SHA 不符、或当前分支是其他任务 / 无关宿主分支 | 停止，报告实际分支与 SHA；不自行改换基线 |
 | `TASK_ALREADY_EXISTS` | `.agent/tasks/<task-slug>/` 已存在 | 停止；相同目标走 `owner_update`，不同目标需 Owner 给新 slug |
 | `REMOTE_NOT_SYNCED` | push 失败、远端不可达，或 push 后 `ls-remote` SHA != 本地 HEAD | 保留本地 commit 与现场并报告；**禁止** Force Push，也禁止以强制更新作为恢复手段 |
-| `BOOTSTRAP_COMPLETE` | 预检通过、Commit 成功、普通 Push 成功、远端 SHA == 本地 HEAD、工作区 clean | 按 Complexity 走出口 |
+| `BOOTSTRAP_COMPLETE` | 预检通过、Commit 成功、普通 Push 成功、远端 SHA == 本地 HEAD、工作区 clean | 按 `state.yaml.route` 走出口；`route` 自检 `ROUTE_OK` 后才可 HANDOFF |
 
 ### 失败与竞态
 
@@ -141,14 +141,22 @@ extra_instruction: <可选>
 
 ### 出口（三条路线）
 
-TaskBuilder 的通用出口是 **Commit + Push + 远端同步核验**，不是 Gate。`coder-start` 只是 NORMAL 路线的 Coder 入口 Gate。
+TaskBuilder 的通用出口是 **Commit + Push + 远端同步核验 + 路线自检**，不是 Gate。`coder-start` 只是 NORMAL 路线的 Coder 入口 Gate。
 
 | 路线 | `state.yaml` 初始化 | 出站动作 | Handoff |
 | --- | --- | --- | --- |
-| NORMAL | `contract.status: NOT_REQUIRED`、`resources.reservations: {}` | Commit + Push + 远端同步核验；再运行 `coder-start`，`PASS` 才交接 | Coder |
-| COMPLEX | `contract.status: PENDING`、`resources.reservations: {}` | Commit + Push + 只读自检（远端 SHA == 本地 HEAD、工作区 clean、`git diff --name-status <base_sha>..HEAD` 只含本任务 Artifact）；**不运行** `coder-start` | Analyst |
-| ARCHITECT | 同 COMPLEX（`contract.status: PENDING`） | 同 COMPLEX | Analyst |
+| NORMAL | `route: NORMAL`、`contract.status: NOT_REQUIRED`、`resources.reservations: {}` | Commit + Push + 远端同步核验 + `route` 自检；再运行 `coder-start`，`PASS` 才交接 | Coder |
+| COMPLEX | `route: COMPLEX`、`contract.status: PENDING`、`resources.reservations: {}` | Commit + Push + 远端同步核验 + `route` 自检；**不运行** `coder-start` | Analyst |
+| ARCHITECT | `route: ARCHITECT`、`contract.status: PENDING`、`resources.reservations: {}` | 同 COMPLEX | Analyst |
 
+路线自检（在仓库根运行；新任务**不得**使用 `--allow-legacy`）：
+
+```bash
+.agent/bin/workflow-check route .agent/tasks/<task-slug>
+```
+
+- 该命令只验证路线事实与状态是否自洽（route 枚举、`contract.status`、`task.md` 的 `## Complexity`、Contract 审批证据、Review 证据形态），`ROUTE_OK` 才允许继续出站；它不是 Gate，不产生 Handoff 授权，也不替代任何 Gate；
+- 只提交已完成且可验证的初始化交付物：`task.md`、`state.yaml`、`findings.md`、`core-logic.md`、`owner-decision.md`、`delivery.md`。不得把未完成草案、无关修改或其他角色的改动混入本次 commit；
 - `coder-start` 要求 Contract 为 `APPROVED` 或 `NOT_REQUIRED`；COMPLEX / ARCHITECT 的 `PENDING` 必然使其 `FAIL`，因此不对这两条路线运行它，也不得为了让它通过而把 Contract 改成 `NOT_REQUIRED`；
 - ARCHITECT 的角色与 Gate 语义不在本 Prompt 定义；本 Prompt 只固定「先交 Analyst」，不创建 Architect Role、不提前改变 Gate 语义；
 - Analyst 批准 Contract 后，由后续角色按各自入口 Gate 继续，TaskBuilder 不预跑后续 Gate；
@@ -172,7 +180,9 @@ TaskBuilder 的通用出口是 **Commit + Push + 远端同步核验**，不是 G
 
 文件在一次初始化中全部创建，并落在当前任务的分支上：经 TB-BRANCH-1 创建分支时，先完成授权与预检，再在新分支上写文件；不在旧分支上先写文件再搬家。
 
-`state.yaml` 是任务当前决策的唯一机器权威源，schema 见 `docs/design/agent-workflow.md`（Workflow V2，无 `phase`）。创建任务时写入 `schema_version: 3`、`task_id`，子事实初始化为 `contract.status=NOT_REQUIRED`（NORMAL，直接交 Coder）或 `PENDING`（COMPLEX / ARCHITECT，交 Analyst）、`review.status=NOT_REQUESTED`、`owner.status=PENDING`、`delivery.status=NOT_RUN`、`blocked.active=false`；`resources.reservations` 初始化为空 `{}`（TaskBuilder 不预猜资源，Analyst 后续根据 Contract / Resource Analysis 填入具体 kind 与值）。
+`state.yaml` 是任务当前决策的唯一机器权威源，schema 见 `docs/design/agent-workflow.md`（Workflow V2，无 `phase`）。创建任务时写入 `schema_version: 3`、`task_id`、`route`（`NORMAL` / `COMPLEX` / `ARCHITECT`，见「判断路线」），子事实初始化为 `contract.status=NOT_REQUIRED`（NORMAL，直接交 Coder）或 `PENDING`（COMPLEX / ARCHITECT，交 Analyst）、`review.status=NOT_REQUESTED`、`owner.status=PENDING`、`delivery.status=NOT_RUN`、`blocked.active=false`；`resources.reservations` 初始化为空 `{}`（TaskBuilder 不预猜资源，Analyst 后续根据 Contract / Resource Analysis 填入具体 kind 与值）。
+
+`route` 是**可选**字段，但新任务必须写：省略只用于历史任务兼容，Engine 不会从 Contract 或 Scope 反推历史任务「应该是」哪条路线。`route` 与 `task.md` 的 `## Complexity` 必须一致，不一致时 Engine 在路线自检与全部 Gate 上 fail-closed。
 
 ## `task.md` 内容
 
@@ -238,6 +248,8 @@ NORMAL / COMPLEX / ARCHITECT
 
 没有内容的可选小节可以省略，不填充无意义的 `N/A`。
 
+`## Complexity` 章节首行必须只保留一个路线关键字（`NORMAL` / `COMPLEX` / `ARCHITECT`），不得保留 `NORMAL / COMPLEX / ARCHITECT` 全量占位或同时列出多条路线；该值必须与 `state.yaml` 的 `route` 完全一致，否则 Engine 在 `route` 自检与全部 Gate 上 fail-closed。
+
 初始化其他文件：
 
 ```text
@@ -267,20 +279,50 @@ AC-002：增加 IsAdmin 判断。
 
 需要真实 MySQL、Redis、MQ 或完整服务才能证明的 AC，应写明环境和数据检查方式，不能只要求查看代码或断言 HTTP 200。
 
-## 判断复杂度
+## 判断路线（TB-ROUTE-1）
 
-默认使用 `NORMAL → 交 Coder`（`contract.status = NOT_REQUIRED`）。
+路线是 TaskBuilder 的决定（WorkflowRouteSelection.md）。判断依据是任务的实际目标、范围和交付物，不是任务名称、文件数量或实现工作量。三条路线的定义与最低分类方向：
 
-存在下列关键问题时使用 `COMPLEX → 交 Analyst`：
+| 路线 | 判定条件 | 交付物 | `contract.status` | 下一角色 |
+| --- | --- | --- | --- | --- |
+| `NORMAL` | 目标清楚、边界有限；不需要独立 Contract 就能让 Coder 开始；不涉及架构、数据模型或公开协议选择 | 可直接实现的业务结果 | `NOT_REQUIRED` | Coder |
+| `COMPLEX` | 需要独立的需求、设计或 Contract 审批，最终交付业务实现 | 业务实现 + 已批准 Contract | `PENDING` → `APPROVED` | Analyst |
+| `ARCHITECT` | 目标本身就是独立的架构或结构交付（模块 / 包 / 接口骨架、依赖方向、结构不变量、结构测试），不是已完成的业务系统；需要结构 Contract 与结构验证 | 结构交付 + 已批准结构 Contract | `PENDING` → `APPROVED` | Analyst |
 
-- 重要架构、数据模型或公开协议选择；
-- 事务、库存、并发或跨系统一致性；
-- MQ 可靠性、幂等、重试或补偿；
-- 权限模型或重要安全边界；
-- Bug 根因不明；
-- 多个现实方案会产生不同业务、可靠性或运维结果。
+判定顺序：
 
-`ARCHITECT` 路线只在 Owner 明确指定（或批次规范已约定）时使用，TaskBuilder 不自行判定。其角色与 Gate 语义不由本 Prompt 定义；TaskBuilder 侧出口与 `COMPLEX` 一致：`contract.status = PENDING`，先交 Analyst。
+1. **先看交付物是不是结构本身**：Owner 要的是「系统应该具有什么结构、结构是否成立」，且业务实现明确不在本次范围 → `ARCHITECT`；
+2. 否则判断是否必须经独立 Contract 审批 → `COMPLEX`：
+   - 重要架构、数据模型或公开协议选择；
+   - 事务、库存、并发或跨系统一致性；
+   - MQ 可靠性、幂等、重试或补偿；
+   - 权限模型或重要安全边界；
+   - Bug 根因不明；
+   - 多个现实方案会产生不同业务、可靠性或运维结果。
+3. 两者都不成立 → `NORMAL`（默认路线）。
+
+`ARCHITECT` 与 `COMPLEX` 的边界沿用 V3.1.0 已确认的架构交付边界：只要需要完整业务功能、数据库 Migration、未获批准的 DB Schema 变更、新外部依赖或构建 / 部署模型变化，就不是 `ARCHITECT` 能交付的范围。遇到这种情况：要么在 Out of Scope 中明确排除并在 Goal / AC 中限定为结构交付（仍可 `ARCHITECT`），要么按 `COMPLEX` 处理并记录理由；不得把业务实现写进结构 Contract 蒙混过关。
+
+### 决策权与 Owner 约束
+
+- Owner 明确指定的交付范围、技术限制和路线要求是上层约束，必须遵守；
+- Owner 未指定路线时，TaskBuilder **必须独立判定，包括独立识别 `ARCHITECT`**。不得以「Owner 没有说 ARCHITECT」为由默认降级为 `COMPLEX` / `NORMAL`，也不存在「ARCHITECT 只能由 Owner 指定」的限制；
+- 路线选择不等于免除审批：Contract、范围与关键业务决定仍由 Owner 批准，TaskBuilder 不批准 Contract、不替 Analyst 设计方案、不替 Owner 创造业务规则；
+- 路线选择不得扩大 Scope。判断为 `COMPLEX` / `ARCHITECT` 会让 Scope 超出 Owner 已确认范围时，按「停止条件」交 Owner 决定，而不是自行降级为 `NORMAL`；
+- 只有 Owner 可以要求改变已记录的路线；TaskBuilder 不得自行改路线（见「更新已有任务」）。
+
+### 记录路线
+
+路线必须同时写入两处，且内容一致：
+
+| 位置 | 作用 | 写法 |
+| --- | --- | --- |
+| `state.yaml` 的 `route` | 唯一机器权威源（Engine 校验） | 逐字大写 `NORMAL` / `COMPLEX` / `ARCHITECT` |
+| `task.md` 的 `## Complexity` | 供人阅读的同一事实 | 章节首行只写一个路线关键字 |
+
+- 两处不一致、`route` 非法（含大小写变体）、或 `## Complexity` 没有唯一声明时，Engine 一律 fail-closed；
+- 不得只写 `task.md` 而省略 `state.yaml.route`：新任务缺 `route` 会被 `workflow-check route` 判为失败；
+- 不得为了绕过校验把 `COMPLEX` / `ARCHITECT` 写成 `NORMAL`，或把 `contract.status` 改成 `NOT_REQUIRED`；Engine 会拒绝 `NORMAL` 携带 Contract 状态、`COMPLEX` / `ARCHITECT` 使用 `NOT_REQUIRED`。
 
 只列出 Analyst 需要回答的问题，不在 Task 中提前写好最终方案。
 
@@ -319,6 +361,14 @@ AC-002：增加 IsAdmin 判断。
 
 Owner 的变化影响已确认 Contract 时，交 Analyst 重新分析，不能由 Task Builder 自行批准。
 
+### 路线变更（TB-ROUTE-2）
+
+- 只有 Owner 明确要求时才改变已记录的路线；无 Owner 指令时保持原路线，不得因为「先做简单点」自行降级；
+- 改变路线时必须同步改写 `state.yaml.route` 与 `task.md` 的 `## Complexity`，并写明旧路线、新路线、Owner 指令与受影响证据；
+- 路线改变后旧证据全部失效：旧 Contract Approval、旧 Review / `CLEAN`、旧 Owner Acceptance、旧 Delivery PASS 都属于旧路线，不得复用。必须由 Analyst 重新形成 A1 / A2 审批；ARCHITECT 的结构 `CLEAN` 不得作为 COMPLEX 的 Cleaner 结论，反之亦然；
+- Engine 会核对 Contract Approval 所在 commit 记录的路线（不一致即拒绝），并核对 `review.target` 是否为结构快照；修改 `route` 字段不会让旧审批自动继续有效；
+- 变更后的出口仍按新路线执行：`NORMAL` 需要 `coder-start` `PASS`，`COMPLEX` / `ARCHITECT` 交 Analyst 且不运行 `coder-start`。
+
 ## 停止条件
 
 出现以下任一情况时输出 `BLOCKED`，说明证据和所需决定：
@@ -333,14 +383,45 @@ Owner 的变化影响已确认 Contract 时，交 Analyst 重新分析，不能�
 
 ## 最终交接
 
-使用中文，结论先行。只包含：
+使用中文，结论先行。正文只包含：
 
 - 创建或更新了哪个任务；
 - 执行了 TB-BRANCH-1 时的分支结果码、Feature Branch、起始 SHA、Commit SHA 与远端同步结论；
 - Goal 的一句话摘要；
 - 最重要的 AC 或 Owner 变化；
-- Complexity 和下一角色；
+- `route`、`## Complexity` 与路线自检结论；
 - 阻塞或待决事项（如有）。
 
 不要在聊天中复制完整 `task.md`。
+
+### 统一交接接口
+
+结尾必须逐项输出以下五个字段，缺一不可：
+
+```text
+RESULT: <BOOTSTRAP_COMPLETE | OWNER_INPUT_REQUIRED | TASK_ALREADY_EXISTS | BRANCH_ALREADY_EXISTS | BASE_MISMATCH | DIRTY_WORKTREE | STAGED_CONTENT_CONFLICT | REMOTE_NOT_SYNCED | BLOCKED>
+CURRENT_ROLE: TaskBuilder
+NEXT_ROLE: <Coder | Analyst | Owner | 无>
+NEXT_ACTION: <下一角色应立即执行的动作；无下一角色时写停止理由>
+NEXT_TARGET: <下一角色读取或操作的目标，如 .agent/tasks/<task-slug>>
+```
+
+- 正常 Handoff 时 `NEXT_ROLE` 只能是 `Coder`（NORMAL，且 `coder-start` `PASS`）或 `Analyst`（COMPLEX / ARCHITECT，且 `route` 自检 `ROUTE_OK`）；
+- `BLOCKED` / `OWNER_INPUT_REQUIRED` 时 `NEXT_ROLE` 为 `Owner`（或 `无`），`NEXT_ACTION` 写明需要 Owner 决定的事项；
+- 该接口是 Prompt 层输出，不写入 `state.yaml`，也不改变任何 Gate 语义。
+
+### 失败交接的 HANDOFF_PROMPT
+
+需要把失败交给其他 Role 处理时（例如基线冲突需 Owner 决定、需求与已确认 Contract / 安全边界冲突需 Analyst 与 Owner 判断、`route` 与证据冲突需 Owner 决定路线），除上述五个字段外还必须追加可直接执行的 `HANDOFF_PROMPT`：
+
+```text
+HANDOFF_PROMPT:
+  背景事实: <已核实的 Commit / 文件 / Gate 输出>
+  失败证据: <哪一项检查失败、实际值与期望值>
+  需要回答的问题: <必须由该 Role 决定的具体问题>
+  不得做的事: <不得自行降级路线、不得改 Contract、不得复用旧证据等>
+  完成后的接口: <该 Role 应输出的 RESULT / NEXT_ROLE>
+```
+
+`HANDOFF_PROMPT` 必须能脱离本次对话被下一角色直接执行：写明仓库、任务路径、分支、Commit SHA 和需要读取的 Artifact，不引用「上面说过的」内容。正常的成功 Handoff 不要求 `HANDOFF_PROMPT`。
 
