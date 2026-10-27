@@ -52,17 +52,24 @@ Gate 同时检查交接所需的 Git 状态，例如工作区是否干净、本�
 
 角色职责、证据绑定和 Gate 属于通用 Workflow Core。首次接入一个项目时，再通过 [Adoption 规范](.agent/specs/WorkflowAdoption.md) 确定集成分支、构建命令、Registry 路径等项目事实，并生成该项目的 `.agent/workflow.yaml`。接入流程是 `DISCOVER → RESOLVE → MATERIALIZE → VERIFY → CLEANUP`。
 
+### 5. 把 Workflow 指令与宿主规则分开
+
+Workflow 专用入口是 [`.agent/specs/WorkflowAgentDirective.md`](.agent/specs/WorkflowAgentDirective.md)，文件名刻意不使用 `AGENTS.md`，避免与宿主的目录级自动加载规则混在一起。它只适用于被明确激活的 Workflow Role；普通 Agent Session 不会自动套用 Workflow 的 Git 白名单、Gate 和 Handoff 约束。
+
+宿主根 `AGENTS.md` 属于宿主项目：存在时角色读取并遵守，不存在时不创建、不阻断。激活条件、缺失处理与退出规则只在上述 Directive 中维护，本 README 不复制。
+
 ## 仓库结构
 
 ```text
 .agent/roles/             六个角色的操作说明
-.agent/specs/             协作、职责边界与项目接入规范
+.agent/specs/             Workflow 专用指令入口、协作、职责边界与项目接入规范
 .agent/engine/            独立 Go Module：workflow-check 及测试
 .agent/templates/         项目接入与配置模板
 docs/design/              设计取舍与完整状态模型
-AGENTS.template.md        接入宿主仓库时使用的 Agent 入口模板
 PACKAGE_MANIFEST.md       分发包包含与排除的内容
 ```
+
+Workflow Role 的入口是 `.agent/specs/WorkflowAgentDirective.md`，由角色 Prompt 显式读取，不依赖目录级自动发现。宿主根 `AGENTS.md` 由宿主维护，本包不创建、不覆盖。
 
 ## 如何验证
 

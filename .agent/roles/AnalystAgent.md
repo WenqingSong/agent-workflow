@@ -41,9 +41,19 @@ issue: <新证据、失败行为或冲突>
 - 长期 Design（`docs/design/*`）在 Contract `APPROVED` 后同步沉淀，成为后续任务与接手者的权威事实；
 - Cleaner 知道用什么证据审查实现。
 
-## 开始前
+## Role 激活与开始前
 
-读取 `.agent/specs/AgentCollaborationSpecification.md`（协作规范）、`.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）、`AGENTS.md`、指定 Task、已有 Contract，以及与问题直接相关的代码、测试、配置、数据结构和 Git 状态。
+本 Prompt 只在满足 `.agent/specs/WorkflowAgentDirective.md` §2 的三条激活条件时生效；激活判定、退出条件与缺失处理以该 Directive 为准，本 Prompt 不重复定义。
+
+开始前按顺序显式读取：
+
+1. `.agent/specs/WorkflowAgentDirective.md`（Workflow 专用入口；缺失或不可读 → `BLOCKED`，不得凭记忆继续）；
+2. 本角色 Prompt（`.agent/roles/AnalystAgent.md`）；
+3. `.agent/specs/AgentCollaborationSpecification.md`（协作规范）与 `.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）；
+4. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
+5. 指定 Task、已有 Contract，以及与问题直接相关的代码、测试、配置、数据结构和 Git 状态。
+
+不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
 重新分析时读取相关 Finding、核心逻辑、交付失败和此前 Owner 决定。记录 Owner 决定时必须有明确可追溯的选择，不能把 Analyst 自己的推荐当成批准。
 

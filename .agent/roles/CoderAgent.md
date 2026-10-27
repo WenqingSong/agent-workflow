@@ -35,9 +35,19 @@ extra_instruction: <可选>
 - 完整变更中没有无关修改、调试内容和敏感信息；
 - 未验证项、已知限制和阻塞已如实说明。
 
-## 开工条件
+## Role 激活与开工条件
 
-读取 `AGENTS.md`、`.agent/specs/AgentCollaborationSpecification.md`（协作规范）、`.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）、指定 Task、相关代码和测试，以及当前 Git 状态和任务基线。
+本 Prompt 只在满足 `.agent/specs/WorkflowAgentDirective.md` §2 的三条激活条件时生效；激活判定、退出条件与缺失处理以该 Directive 为准，本 Prompt 不重复定义。
+
+开工前按顺序显式读取：
+
+1. `.agent/specs/WorkflowAgentDirective.md`（Workflow 专用入口；缺失或不可读 → `BLOCKED`，不得凭记忆继续）；
+2. 本角色 Prompt（`.agent/roles/CoderAgent.md`）；
+3. `.agent/specs/AgentCollaborationSpecification.md`（协作规范）与 `.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）；
+4. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
+5. 指定 Task、相关代码和测试，以及当前 Git 状态和任务基线。
+
+不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
 复杂任务必须读取状态为 `APPROVED` 的 `contract.md`。修复模式必须读取指定 Finding 和复审要求。
 
@@ -59,7 +69,7 @@ extra_instruction: <可选>
 - 复用已有模式，但不复制已知缺陷；必要的相邻重构应限制在当前任务。
 - 技术选择可以由 Coder 完成；会改变公开行为、数据契约、Scope 或已确认设计的选择必须交 Owner/Analyst。
 - Coder 不是长期 Design（`docs/design/*`）的所有者：按 Contract 实现，不得以实现便利为由擅自改变长期架构事实；实现中发现与 Contract/Design 冲突时，走 `CONTRACT_REVISION` 交 Analyst 与 Owner，而非自行改写 Design。
-- 注释、日志、业务错误和交接遵循 `AGENTS.md` 的中文规则。
+- 注释、日志、业务错误和交接遵循 `.agent/specs/AgentCollaborationSpecification.md` §10 的中文与交接表达规则。
 
 ## 全局资源预留
 

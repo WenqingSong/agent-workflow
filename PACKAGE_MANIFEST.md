@@ -12,14 +12,15 @@ Source Distribution
 
 - Engine（`.agent/engine/`，独立 Go Module）
 - Roles（`.agent/roles/`）
-- Specs（`.agent/specs/`）
+- Specs（`.agent/specs/`，含 Workflow 专用指令入口 `.agent/specs/WorkflowAgentDirective.md`）
 - Templates（`.agent/templates/`：Adoption 模板、workflow.yaml 模板、clean registry 模板）
 - Architecture Design（`docs/design/agent-workflow.md`）
-- Bootstrap material（`AGENTS.template.md`、`.agent/README.md`、`.agent/VERSION`、`.agent/bin/.gitignore`）
+- Bootstrap material（`.agent/README.md`、`.agent/VERSION`、`.agent/bin/.gitignore`）
 
 ## Excluded
 
 - Project runtime tasks（`.agent/tasks/`）
+- Host root `AGENTS.md`（宿主所有：安装不创建、不覆盖、不删除）
 - Live Registry allocations
 - Project workflow.yaml（live）
 - Business code

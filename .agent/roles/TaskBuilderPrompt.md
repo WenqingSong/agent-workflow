@@ -33,9 +33,19 @@ extra_instruction: <可选>
 - 每项关键 AC 都有现实可行的验证路径；
 - 后续角色不需要猜测重要业务规则。
 
-## 开始前
+## Role 激活与开始前
 
-读取 Owner 需求、`.agent/specs/AgentCollaborationSpecification.md`（协作规范）、`.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）、`AGENTS.md`，以及定义本任务所需的少量真实代码、配置和 Git 状态。
+本 Prompt 只在满足 `.agent/specs/WorkflowAgentDirective.md` §2 的三条激活条件时生效；激活判定、退出条件与缺失处理以该 Directive 为准，本 Prompt 不重复定义。
+
+开始前按顺序显式读取：
+
+1. `.agent/specs/WorkflowAgentDirective.md`（Workflow 专用入口；缺失或不可读 → `BLOCKED`，不得凭记忆继续）；
+2. 本角色 Prompt（`.agent/roles/TaskBuilderPrompt.md`）；
+3. `.agent/specs/AgentCollaborationSpecification.md`（协作规范）与 `.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）；
+4. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
+5. Owner 需求，以及定义本任务所需的少量真实代码、配置和 Git 状态。
+
+不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
 `owner_update` 还应读取原 `task.md` 和存在的 Contract、Finding、核心逻辑及交付记录，判断哪些实现或结论需要重新验证。
 

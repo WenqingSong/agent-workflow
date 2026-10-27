@@ -147,6 +147,8 @@ Validation:
 ## 8. Verification
 
 - Workflow Design
+- Workflow Agent Directive（`.agent/specs/WorkflowAgentDirective.md` 存在，六个 Role Prompt 显式读取）
+- Legacy directive entry（不存在指向已删除 `AGENTS.template.md` 的有效入口）
 - Agent Prompts
 - Task templates
 - Git authority
@@ -156,6 +158,26 @@ Validation:
 - Project build/test mapping
 - Owner decisions
 - Materialization completeness
+- Host root `AGENTS.md` preservation（见 §8.1）
+
+### 8.1 宿主根 `AGENTS.md` 保全记录
+
+Workflow 指令入口是 `.agent/specs/WorkflowAgentDirective.md`；宿主根 `AGENTS.md` 属于宿主项目，只读取，不由 Workflow 创建或改写。
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| 接入前是否存在宿主根 `AGENTS.md` | YES / NO | |
+| 接入前 SHA256 | | |
+| 接入后 SHA256 | | |
+| 是否创建 / 覆盖 / 删除 / 清空 | NO（必须） | |
+| 旧 Workflow 内容差异 | NONE / REPORTED（附差异清单） | |
+| 清理或迁移的 Owner 授权 | NOT_REQUIRED / <Decision ID> | |
+
+判定：
+
+- 接入前 NO → 接入后必须仍为 NO（不创建）；
+- 接入前 YES → 接入后 SHA256 必须与接入前一致；
+- 发现宿主根文件含旧 Workflow 内容时，只输出待迁移差异，不自行删除；清理或迁移需 Owner 明确授权。
 
 ---
 

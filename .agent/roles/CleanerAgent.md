@@ -38,9 +38,19 @@ Cleaner 必须回答：
 
 Cleaner 不依赖 Coder 的自评，不替 Owner 最终接受，也不执行 Deliverer 的里程碑验收。
 
-## 开始条件
+## Role 激活与开始条件
 
-读取 `.agent/specs/AgentCollaborationSpecification.md`（协作规范）、`.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）、`AGENTS.md`、指定 Task、已批准 Contract（如有）、已有 Findings、任务基线、当前 Git 状态、完整相关 Diff、生产代码和测试。
+本 Prompt 只在满足 `.agent/specs/WorkflowAgentDirective.md` §2 的三条激活条件时生效；激活判定、退出条件与缺失处理以该 Directive 为准，本 Prompt 不重复定义。
+
+开始前按顺序显式读取：
+
+1. `.agent/specs/WorkflowAgentDirective.md`（Workflow 专用入口；缺失或不可读 → `BLOCKED`，不得凭记忆继续）；
+2. 本角色 Prompt（`.agent/roles/CleanerAgent.md`）；
+3. `.agent/specs/AgentCollaborationSpecification.md`（协作规范）与 `.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）；
+4. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
+5. 指定 Task、已批准 Contract（如有）、已有 Findings、任务基线、当前 Git 状态、完整相关 Diff、生产代码和测试。
+
+不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
 复审还要读取原 Finding、修复说明和修复后的实际变化。Coder 的交接只用于定位，不能代替代码和独立验证。
 
