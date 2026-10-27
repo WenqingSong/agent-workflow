@@ -22,7 +22,7 @@ python3 scripts/release/release.py verify-uploaded --assets dist/expected --down
 python3 scripts/release/release.py promote-gate --stage pre-promote \
   --report dist/reports/upload-verification.json --assets dist/expected
 
-# 两次独立构建比较可复现性
+# 两个独立克隆中各构建一次，比较资产是否逐字节一致（要求 Tag 存在）
 python3 scripts/release/release.py repro --repo . --tag v3.1.0
 
 # 汇总各阶段报告（Release Verification Report）

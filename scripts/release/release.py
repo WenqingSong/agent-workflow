@@ -1260,50 +1260,59 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 
 def cmd_repro(args: argparse.Namespace) -> int:
+    """在两个独立克隆中构建同一 Tag，比较资产是否逐字节一致。
+
+    P07 的 dist 要求工作区完全干净，因此复现构建不能复用带 dist/ 的工作区；
+    这里为每次构建创建独立克隆，保证两次构建互不影响。
+    """
     repo = Path(args.repo).resolve()
+    guard = check_tag(repo, args.tag)
+    commit = guard["source_commit"]
+    version = guard["version"]
     workdir = Path(args.workdir).resolve() if args.workdir else Path(tempfile.mkdtemp(prefix="workflow-repro-"))
     workdir.mkdir(parents=True, exist_ok=True)
     try:
-        first = workdir / "build-a"
-        second = workdir / "build-b"
-        for target in (first, second):
-            if target.exists():
-                shutil.rmtree(target)
+        snapshots: list[dict[str, str]] = []
+        for label in ("a", "b"):
+            clone = workdir / f"repro-{label}"
+            if clone.exists():
+                shutil.rmtree(clone)
+            run(["git", "clone", "--quiet", "--no-hardlinks", str(repo), str(clone)])
+            git(clone, "checkout", "--quiet", "--detach", commit)
             ns = argparse.Namespace(
-                repo=str(repo),
-                output=str(target),
+                repo=str(clone),
+                output=str(clone / "dist"),
                 tag=args.tag,
                 json=False,
-                ignore=list(getattr(args, "ignore", ()) or ()),
+                ignore=[],
             )
-            code = cmd_build(ns)
-            if code != EXIT_OK:
-                raise ReleaseError("REPRO_BUILD_FAILED", f"复现构建失败: {target}")
+            if cmd_build(ns) != EXIT_OK:
+                raise ReleaseError("REPRO_BUILD_FAILED", f"复现构建失败: {clone}")
+            snapshots.append(
+                {
+                    p.name: sha256_file(p)
+                    for p in sorted((clone / "dist").iterdir())
+                    if p.is_file() and p.name not in ("SHA256SUMS", "version.json")
+                }
+            )
+            snapshots[-1]["__SHA256SUMS__"] = sha256_file(clone / "dist" / "SHA256SUMS")
+            snapshots[-1]["__version.json__"] = sha256_file(clone / "dist" / "version.json")
 
-        def snapshot(directory: Path) -> dict[str, str]:
-            return {
-                p.name: sha256_file(p)
-                for p in sorted(directory.iterdir())
-                if p.is_file() and p.name not in ("SHA256SUMS", "version.json")
-            }
-
-        a, b = snapshot(first), snapshot(second)
-        failures = []
+        a, b = snapshots
+        failures: list[str] = []
         if sorted(a) != sorted(b):
             failures.append(f"两次构建资产集合不同: {sorted(set(a) ^ set(b))}")
         for name in sorted(set(a) & set(b)):
             if a[name] != b[name]:
                 failures.append(f"{name}: 两次独立构建 SHA256 不同")
-        for doc in ("SHA256SUMS", "version.json"):
-            if (first / doc).read_bytes() != (second / doc).read_bytes():
-                failures.append(f"{doc}: 两次独立构建内容不同")
 
         report = {
             "status": "PASS" if not failures else "FAIL",
             "command": "repro",
             "tag": args.tag,
-            "version": read_version_file(repo),
-            "artifacts": len(a),
+            "version": version,
+            "source_commit": commit,
+            "artifacts": len([n for n in a if not n.startswith("__")]),
             "failures": failures,
         }
         if args.report:
