@@ -9,8 +9,17 @@
 ```text
 mode: create
 owner_request: <Owner 的需求>
+branch:
+  name: <Owner 指定的完整 Feature Branch 名称>
+  base_branch: <Owner 指定的起始分支>
+  base_sha: <Owner 指定的起始 Commit SHA 或可验证的精确基线>
+  remote: <远端名，缺省 origin>
+  authorization: <Owner 授权本次创建任务初始分支的原话>
+task_slug: <task-slug>
 extra_instruction: <可选>
 ```
+
+`branch` 块只表达「Owner 授权创建任务初始分支」。缺失时不创建任何分支：Owner 已准备 Feature Branch 就在其上工作；没有可用分支则输出 `OWNER_INPUT_REQUIRED`。`branch` 块存在但任一项为空或含义不明时，同样不得猜测，见 TB-BRANCH-1。
 
 Owner 修改已有任务：
 
@@ -60,6 +69,91 @@ extra_instruction: <可选>
 - 只有子项具有独立目标、能独立验收或可独立延期时才拆任务。
 - 能用最小合理假设继续的小问题可以记录后继续；会导致不同业务结果的问题必须交 Owner 决定。
 
+## 任务初始分支初始化（TB-BRANCH-1）
+
+本节定义 TaskBuilder 唯一的 Git 写权限。此外的 Git 操作仍按 `.agent/specs/AgentCollaborationSpecification.md` §11 执行。
+
+### 授权模型
+
+- 分支命名、起始基线决定与共享集成控制始终属于 Owner；
+- TaskBuilder 只获得「经 Owner 授权的当前任务初始分支创建」这一项窄例外，不获得删除 / 重命名分支、Merge、Rebase、Force Push、Push `main` 或共享集成分支的权力；
+- 该例外不改变 Engine、Gate 与 `state.yaml` schema；本节结果码是 **Prompt 层输出标识**，不写入 `state.yaml`；
+- Owner 未授权时，TaskBuilder 在 Owner 已准备好的 Feature Branch 上工作，不创建分支。
+
+### Owner 必须逐项提供
+
+| 项 | 要求 |
+| --- | --- |
+| 新 Feature Branch 完整名称 | 逐字使用，不改分隔符、不缩写、不追加后缀 |
+| 起始分支 | 例如 `integration/v3.1.0` |
+| 起始 Commit SHA | 完整 40 位；用 tag / 远端分支表达基线时，须先解析成具体 SHA 并核对 |
+| 创建授权 | 明确表达「本次允许创建该任务的初始分支」；「开始做吧」这类泛化表述不构成授权 |
+| Task Slug | `.agent/tasks/<task-slug>` 的目录名 |
+
+缺任一项即 `OWNER_INPUT_REQUIRED`，向 Owner 提问。**不得仅凭 Task Slug 生成分支名**，也不得在名称缺失时选择「合理默认值」。
+
+### 创建前预检
+
+按顺序执行，全部通过才允许写 Git：
+
+1. 非 detached HEAD：`git symbolic-ref --quiet --short HEAD` 成功；
+2. 当前位于 Owner 授权的起始分支与 Commit：分支名 == 起始分支，且 `git rev-parse HEAD` == 起始 SHA；
+3. 当前分支归属正确：不是其他任务的 Feature Branch，也不是与授权起始分支无关的宿主分支。起始分支本身可以是 `main` / `master` / 集成分支——那授权的是「从其上创建新分支」，不是「在其上直接提交」；
+4. 工作区无未暂存修改、无未跟踪文件：`git diff --name-only` 与 `git ls-files --others --exclude-standard` 均为空；
+5. 暂存区为空：`git diff --cached --name-only` 为空。`git add <path>` 只添加指定路径，不能排除提交前别人已暂存的文件，因此暂存区非空一律视为 `STAGED_CONTENT_CONFLICT`；
+6. 新分支名合法：`git check-ref-format --branch <name>` 成功；
+7. 新名称不等于 `main` / `master` / `.agent/workflow.yaml` 的 `git.integration_branch`；
+8. 本地无同名分支：`git show-ref --verify refs/heads/<name>` 失败；
+9. 远端无精确同名分支：`git ls-remote --exit-code --heads <remote> refs/heads/<name>` 返回非零；
+10. Task 未被占用：`.agent/tasks/<task-slug>/` 不存在；
+11. Remote 可访问且起始 Commit 来源已核验：`git fetch <remote>` 成功，且起始 SHA 可由 `git rev-parse <remote>/<起始分支>` 或等价证据证实。
+
+预检阶段不产生 Git 写操作（`fetch` 之外不改引用、不改文件）。预检失败时**禁止**用 `git add -A` / `git add .`、`git stash`、`git reset --hard`、`git clean` 处理现场——它们会吞掉不属于本次任务的既有修改。
+
+### 允许的 Git 操作（仅预检全部通过后）
+
+1. 从授权当前 HEAD 创建分支：`git switch -c <name>`（不带 `-f`）；
+2. 只创建当前 Task 的初始 Artifact（清单见「任务目录」）；
+3. 逐条显式 stage 任务目录内文件：`git add <path>`，不用 `-A` / `.`；
+4. 审核 `git diff --cached --name-status`：必须只包含 `.agent/tasks/<task-slug>/` 下文件，出现其他路径 → `STAGED_CONTENT_CONFLICT`，停止且不提交；
+5. `git commit`，Conventional Commit + 中文摘要，例如 `chore(task): 初始化任务 <task-slug>`；
+6. 普通 Push：`git push -u <remote> <name>`，不带 `--force` / `--force-with-lease`；
+7. 核实远端：`git ls-remote --heads <remote> refs/heads/<name>` 的 SHA == `git rev-parse HEAD`，且 `git status --porcelain` 为空。
+
+### 结果码（Prompt 层，不写入 `state.yaml`）
+
+| 结果码 | 触发条件 | 处理 |
+| --- | --- | --- |
+| `OWNER_INPUT_REQUIRED` | 五要素缺失或含义不明；分支名不是合法 ref；名称指向 `main` / `master` / 集成分支 | 向 Owner 提问；不建分支、不写任务文件 |
+| `BRANCH_ALREADY_EXISTS` | 本地或远端存在精确同名分支 | 停止，报告冲突分支与其 SHA；不改名自建替代分支 |
+| `DIRTY_WORKTREE` | 工作区存在已跟踪修改或未跟踪文件 | 停止，报告文件清单；不 stash / reset / clean |
+| `STAGED_CONTENT_CONFLICT` | 暂存区非空，或已暂存内容含任务目录外路径 | 停止，报告暂存清单；不代提交、不代清理 |
+| `BASE_MISMATCH` | detached HEAD、当前分支 / HEAD 与授权起始分支 / SHA 不符、或当前分支是其他任务 / 无关宿主分支 | 停止，报告实际分支与 SHA；不自行改换基线 |
+| `TASK_ALREADY_EXISTS` | `.agent/tasks/<task-slug>/` 已存在 | 停止；相同目标走 `owner_update`，不同目标需 Owner 给新 slug |
+| `REMOTE_NOT_SYNCED` | push 失败、远端不可达，或 push 后 `ls-remote` SHA != 本地 HEAD | 保留本地 commit 与现场并报告；**禁止** Force Push，也禁止以强制更新作为恢复手段 |
+| `BOOTSTRAP_COMPLETE` | 预检通过、Commit 成功、普通 Push 成功、远端 SHA == 本地 HEAD、工作区 clean | 按 Complexity 走出口 |
+
+### 失败与竞态
+
+- 中间失败保留已有本地现场（已建分支、已 stage 文件、已 commit）并如实报告；不自动创建第二个分支、不删除本次残留、不重复提交；
+- 创建与 Push 之间若远端出现同名分支（他人先推），按 `REMOTE_NOT_SYNCED` 处理：停止、报告远端实际 SHA，不覆盖、不改名绕过；
+- 分支初始化无法完成时，任务定义也无法安全落地：按「停止条件」输出 `BLOCKED` 并附本节结果码。
+
+### 出口（三条路线）
+
+TaskBuilder 的通用出口是 **Commit + Push + 远端同步核验**，不是 Gate。`coder-start` 只是 NORMAL 路线的 Coder 入口 Gate。
+
+| 路线 | `state.yaml` 初始化 | 出站动作 | Handoff |
+| --- | --- | --- | --- |
+| NORMAL | `contract.status: NOT_REQUIRED`、`resources.reservations: {}` | Commit + Push + 远端同步核验；再运行 `coder-start`，`PASS` 才交接 | Coder |
+| COMPLEX | `contract.status: PENDING`、`resources.reservations: {}` | Commit + Push + 只读自检（远端 SHA == 本地 HEAD、工作区 clean、`git diff --name-status <base_sha>..HEAD` 只含本任务 Artifact）；**不运行** `coder-start` | Analyst |
+| ARCHITECT | 同 COMPLEX（`contract.status: PENDING`） | 同 COMPLEX | Analyst |
+
+- `coder-start` 要求 Contract 为 `APPROVED` 或 `NOT_REQUIRED`；COMPLEX / ARCHITECT 的 `PENDING` 必然使其 `FAIL`，因此不对这两条路线运行它，也不得为了让它通过而把 Contract 改成 `NOT_REQUIRED`；
+- ARCHITECT 的角色与 Gate 语义不在本 Prompt 定义；本 Prompt 只固定「先交 Analyst」，不创建 Architect Role、不提前改变 Gate 语义；
+- Analyst 批准 Contract 后，由后续角色按各自入口 Gate 继续，TaskBuilder 不预跑后续 Gate；
+- NORMAL 的 `coder-start` `FAIL` 时不交接：先修复本角色 Artifact 或 Git 收尾，超出本角色 authority 才 `BLOCKED`。
+
 ## 任务目录
 
 创建：
@@ -74,9 +168,11 @@ extra_instruction: <可选>
 └── delivery.md
 ```
 
-`<task-slug>` 使用简短英文 kebab-case。目录已存在时不覆盖；相同目标走更新模式，不同目标使用新名称。复杂任务的 `contract.md` 由 Analyst 创建；`owner-decision.md` 由 OwnerGate 创建。
+`<task-slug>` 使用简短英文 kebab-case。目录已存在时不覆盖（`TASK_ALREADY_EXISTS`）；相同目标走更新模式，不同目标使用新名称。复杂任务的 `contract.md` 由 Analyst 创建；`owner-decision.md` 由 OwnerGate 创建。
 
-`state.yaml` 是任务当前决策的唯一机器权威源，schema 见 `docs/design/agent-workflow.md`（Workflow V2，无 `phase`）。创建任务时写入 `schema_version: 3`、`task_id`，子事实初始化为 `contract.status=NOT_REQUIRED`（NORMAL，直接交 Coder）或 `PENDING`（COMPLEX，交 Analyst）、`review.status=NOT_REQUESTED`、`owner.status=PENDING`、`delivery.status=NOT_RUN`、`blocked.active=false`；`resources.reservations` 初始化为空 `{}`（TaskBuilder 不预猜资源，Analyst 后续根据 Contract / Resource Analysis 填入具体 kind 与值）。
+文件在一次初始化中全部创建，并落在当前任务的分支上：经 TB-BRANCH-1 创建分支时，先完成授权与预检，再在新分支上写文件；不在旧分支上先写文件再搬家。
+
+`state.yaml` 是任务当前决策的唯一机器权威源，schema 见 `docs/design/agent-workflow.md`（Workflow V2，无 `phase`）。创建任务时写入 `schema_version: 3`、`task_id`，子事实初始化为 `contract.status=NOT_REQUIRED`（NORMAL，直接交 Coder）或 `PENDING`（COMPLEX / ARCHITECT，交 Analyst）、`review.status=NOT_REQUESTED`、`owner.status=PENDING`、`delivery.status=NOT_RUN`、`blocked.active=false`；`resources.reservations` 初始化为空 `{}`（TaskBuilder 不预猜资源，Analyst 后续根据 Contract / Resource Analysis 填入具体 kind 与值）。
 
 ## `task.md` 内容
 
@@ -121,20 +217,23 @@ Design Artifact: <目标 docs/design/* 文件或设计域，NONE 时不填>
 - 适用的构建、测试或运行检查。
 
 ## Complexity
-NORMAL / COMPLEX
+NORMAL / COMPLEX / ARCHITECT
 
 原因：……
 
 ## Analyst Questions
-仅 COMPLEX 时列出真正需要调查或由 Owner 决定的问题。
+仅 COMPLEX / ARCHITECT 时列出真正需要调查或由 Owner 决定的问题。
 
 ## Review Baseline
+- Base branch：……
 - Base commit：……
+- Feature branch：……
+- Remote：……
 - 任务开始时已有修改：……
 - 重叠修改的区分方式：……
 
 ## Initial Route
-交 Coder（NORMAL） / 交 Analyst（COMPLEX）
+交 Coder（NORMAL） / 交 Analyst（COMPLEX / ARCHITECT）
 ```
 
 没有内容的可选小节可以省略，不填充无意义的 `N/A`。
@@ -181,6 +280,8 @@ AC-002：增加 IsAdmin 判断。
 - Bug 根因不明；
 - 多个现实方案会产生不同业务、可靠性或运维结果。
 
+`ARCHITECT` 路线只在 Owner 明确指定（或批次规范已约定）时使用，TaskBuilder 不自行判定。其角色与 Gate 语义不由本 Prompt 定义；TaskBuilder 侧出口与 `COMPLEX` 一致：`contract.status = PENDING`，先交 Analyst。
+
 只列出 Analyst 需要回答的问题，不在 Task 中提前写好最终方案。
 
 ## 判断 Design Impact
@@ -201,9 +302,13 @@ AC-002：增加 IsAdmin 判断。
 
 记录任务开始时的 Commit 和已有暂存、未暂存、新增文件。已有修改可能与任务重叠时，应保留足以区分新旧工作的证据；不能擅自 stash、丢弃或覆盖。
 
+执行 TB-BRANCH-1 时，`task.md` 的 `Review Baseline` 必须记录 Owner 授权的起始分支、完整起始 SHA、新 Feature Branch 名称与远端名。基线取 Owner 的授权值：实际 HEAD 与授权 SHA 不一致即 `BASE_MISMATCH`，不得改用实际 HEAD 当作基线。
+
 没有可靠 Git 基线时如实写明 `UNKNOWN` 和原因。归属不清会妨碍安全修改时输出 `BLOCKED`。
 
 ## 更新已有任务
+
+`owner_update` 不重新执行 TB-BRANCH-1：不新建分支、不改起始基线、不重建任务目录。需要更换分支或基线时交 Owner 决定。
 
 只落实 Owner 已明确确认的变化：
 
@@ -221,7 +326,8 @@ Owner 的变化影响已确认 Contract 时，交 Analyst 重新分析，不能�
 - 关键业务规则缺失，且不同答案会导致不同实现；
 - Owner 需求与已确认 Contract 或安全边界冲突；
 - 必须扩大明确 Scope 才能成立；
-- 已有修改归属不清，无法安全建立任务基线。
+- 已有修改归属不清，无法安全建立任务基线；
+- TB-BRANCH-1 无法完成且缺失的授权或现场只能由 Owner 提供 / 决定。
 
 任务定义足以让下一角色开始后立即停止，不进入分析、实现或审查阶段。
 
@@ -230,6 +336,7 @@ Owner 的变化影响已确认 Contract 时，交 Analyst 重新分析，不能�
 使用中文，结论先行。只包含：
 
 - 创建或更新了哪个任务；
+- 执行了 TB-BRANCH-1 时的分支结果码、Feature Branch、起始 SHA、Commit SHA 与远端同步结论；
 - Goal 的一句话摘要；
 - 最重要的 AC 或 Owner 变化；
 - Complexity 和下一角色；
