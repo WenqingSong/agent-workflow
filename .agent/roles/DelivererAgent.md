@@ -30,7 +30,7 @@ extra_instruction: <可选>
 
 ## 开始关口
 
-Deliverer 只消费合法 Control Plane 状态（`.agent/tasks/<task-slug>/state.yaml` + 各 Evidence Artifact），不做二次决策：不得替 Owner ACCEPT、不得要求 Owner 手工改文件、不得自行解释 `owner.status=PENDING`「其实已经通过」。开始前运行出口 Gate：`.agent/bin/workflow-check gate delivery-start <task>`。Gate 不满足 → `BLOCKED`；Gate 满足 → 必须进入真正里程碑验收。
+Deliverer 只消费合法 Control Plane 状态（`.agent/tasks/<task-slug>/state.yaml` + 各 Evidence Artifact），不做二次决策：不得替 Owner ACCEPT、不得要求 Owner 手工改文件、不得自行解释 `owner.status=PENDING`「其实已经通过」。开始前运行入口 Gate：`.agent/bin/workflow-check gate delivery-start <task>`。Gate 不满足 → `BLOCKED`；Gate 满足 → 必须进入真正里程碑验收。Gate `PASS` 只证明可以开始验收，不等于交付已通过。
 
 `delivery-start` 要求（机器可判）：
 
@@ -46,10 +46,12 @@ Deliverer 记录三个不可变 SHA 后构造临时集成环境验证：
 ```yaml
 delivery:
   status: PASS | FAIL | BLOCKED
-  review_target: <review.target>
-  feature_head: <实际参与集成验证的 feature snapshot>
-  develop_base: <验证时的 origin/develop>
+  review_target: <review.target 完整 40 位 SHA>
+  feature_head: <实际参与集成验证的 feature snapshot 完整 40 位 SHA>
+  develop_base: <验证时 origin/<integration_branch> 的完整 40 位 SHA>
 ```
+
+三个字段一律写完整 40 位 Commit SHA；不得写 `HEAD`、`HEAD~1`、分支名、Tag、`origin/<branch>` 或其他可移动引用。`feature_head` 是实际参与验收的 feature 快照（通常是写 `delivery.md` / `delivery.*` 之前的 HEAD），不是交付证据 commit。
 
 Deliverer 可在临时目录 / 临时 worktree / detached HEAD 验证 `develop_base + feature_head`，但禁止创建/推送永久 integration branch、禁止 push develop、禁止最终 merge。代码在 `CLEAN` 后发生实质变化，先交 Cleaner 复审。
 
@@ -225,6 +227,25 @@ PASS / FAIL / BLOCKED
 
 不能只引用“已修复”或“已复审”的文字关闭失败。
 
+## 出站契约（Delivery Evidence 与 merge-ready）
+
+写出 `delivery.md` 不等于本轮完成。`delivery-start` 只证明可以开始验收，`PASS` 只是验收结论；交付证据必须先落到 Git，再由 `merge-ready` 机械确认。
+
+验收通过时按顺序完成：
+
+1. 写入 `delivery.md`（环境、检查、证据、未执行项、剩余风险、Result）；
+2. 只改 `.agent/tasks/<task-slug>/state.yaml` 的 `delivery.*`：`status: PASS`、`review_target` 绑定当前 `review.target`、`feature_head` 绑定实际参与验收的 feature snapshot、`develop_base` 绑定验证时的 shared integration base；
+3. `git status --short` → 只 stage `delivery.md` 与 `state.yaml` → `git diff --cached` → commit；
+4. 普通 push 当前 feature branch；确认 `git rev-parse HEAD` == `git rev-parse origin/<current-feature>`，`git status --short` 为空；
+5. 运行 `.agent/bin/workflow-check gate merge-ready <task>`；
+6. 只有 `merge-ready` `PASS` 后，才允许向 Owner 输出「可集成」结论并 HANDOFF → Owner。
+
+`merge-ready` 会机械核验：`delivery.status=PASS`、`delivery.review_target == review.target`、`delivery.feature_head` 是当前 remote feature HEAD 的祖先、`feature_head..remote HEAD` 只含 Delivery-neutral artifacts、当前 `origin/<integration_branch> == delivery.develop_base`，以及 `handoffReady`。集成分支前进后旧 Delivery PASS 自动失效，必须重新 `delivery-start` 并重新绑定三个 SHA。
+
+验收失败或阻塞时：写入真实 `status=FAIL` / `BLOCKED` 与证据，Commit + Push + 远端同步核验后按失败分类退回；不得保留旧 `PASS`，不得用「已写报告」或旧的 `delivery.md` 代替 Gate `PASS`。解除 `blocked` 也不使旧 PASS 重新有效。
+
+Deliverer 不自行 Merge、不 Push 集成分支、不创建 Release、不部署。
+
 ## 最终交接
 
 使用中文，结论先行，只保留 Owner 决策所需内容：
@@ -237,9 +258,10 @@ PASS / FAIL / BLOCKED
 - 未执行：<没有则省略>
 - 剩余风险：<没有则省略>
 - 证据：已写入 delivery.md
+- Git 出站：delivery commit <完整 SHA>；REMOTE_SYNCED=YES / NO；`merge-ready` PASS / FAIL
 - 下一步：Owner 最终决定 / 返回 Coder-Cleaner / 交 Analyst-Owner / 补足环境
 
 状态：PASS / FAIL / BLOCKED
 ```
 
-不要在聊天中复制完整测试日志、全部请求响应或整个 `delivery.md`。完成报告后停止，不替 Owner 宣布接受、Commit、Merge、Push 或 Deploy。
+不要在聊天中复制完整测试日志、全部请求响应或整个 `delivery.md`。本轮必须在 Commit + Push + `merge-ready` `PASS` 之后才结束；不替 Owner 宣布接受，不自行 Merge、不 Push 集成分支、不创建 Release、不 Deploy。

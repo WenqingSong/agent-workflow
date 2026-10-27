@@ -203,12 +203,41 @@ RECOMMENDATION：……
 2. 将选择写入 `Selected Design`；
 3. 在 `Owner Decision Record` 记录决定和适用范围；
 4. 关键问题全部解决后才改为 `APPROVED`；
-5. `Design Impact = NEW/UPDATE` 时，基于 APPROVED Contract 新增/更新对应 `docs/design/*`，再交 Coder 实现；
-6. 给 Coder 简要交接已确认约束与剩余非阻塞风险。
+5. `Design Impact = NEW/UPDATE` 时，基于 APPROVED Contract 新增/更新对应 `docs/design/*`；
+6. 按「A1 / A2 Evidence 与出口契约」完成提交与 push，`coder-start` `PASS` 后再给 Coder 简要交接已确认约束与剩余非阻塞风险。
 
 Owner 的决定改变 Task 时，先由 Owner 或 Task Builder 更新 Task，再批准相容的 Contract。
 
-Owner 是 Contract `ACCEPTED / REJECTED` 的唯一 Decision Authority；Analyst 只是在收到 Owner 明确指令后机械持久化（File Writer ≠ Decision Authority）。记录决定时采用两段式提交：先 commit 最终 `contract.md`（Evidence Commit A1），再只改 `state.yaml` 写入 `contract.status=APPROVED`、`contract.target=A1`（Metadata Commit A2）。不得因测试通过、Cleaner `CLEAN` 或阅读聊天上下文自行推断 Owner 已接受。状态模型见 `docs/design/agent-workflow.md`。
+Owner 是 Contract `ACCEPTED / REJECTED` 的唯一 Decision Authority；Analyst 只是在收到 Owner 明确指令后机械持久化（File Writer ≠ Decision Authority）。不得因测试通过、Cleaner `CLEAN` 或阅读聊天上下文自行推断 Owner 已接受。状态模型见 `docs/design/agent-workflow.md`。
+
+## A1 / A2 Evidence 与出口契约
+
+Analyst 的出口是 `.agent/bin/workflow-check gate coder-start <task>`，且只有 Contract 被 Owner 明确批准后才能运行它。
+
+### A1：Contract Evidence
+
+1. 把 Owner 实际批准的内容写入 `contract.md`（`Decision Status: APPROVED`、`Selected Design`、`Owner Decision Record`）；
+2. `Design Impact = NEW/UPDATE` 时，基于该 Contract 更新 `docs/design/*`；Design 更新可包含在 A1，也可位于 A2 之前的独立 commit，但不得再改变已批准的 `contract.md` 内容；
+3. 涉及共享资源的，先按 Registry-only Develop Authority 完成 Registry commit 并 push 到 shared integration branch，再核验资源真实落 `RESERVED / ACTIVE`；
+4. `git status --short` → 只 stage Analyst-owned 文件（`contract.md`、`docs/design/*`、必要的 Registry 文件）→ `git diff --cached` 核对 → commit；
+5. 记录 A1 的**完整 40 位 SHA**。
+
+### A2：Approval Evidence
+
+1. 只修改 `.agent/tasks/<task-slug>/state.yaml`：`contract.status: APPROVED`、`contract.target: <A1 完整 40 位 SHA>`，必要时写入已验证的 `resources.reservations.<kind>`；
+2. A2 不得混入 `contract.md`、Design 或业务代码变更；A2 之后若 `contract.md` 内容变化，`contract.target` 立即失效，必须重新形成 A1 并重新取得 Owner 批准；
+3. `git status --short` → 只 stage `state.yaml` → `git diff --cached` → commit；
+4. 普通 push 当前 feature branch（Registry 文件按 Registry-only 例外单独 push shared integration branch）；确认 `git rev-parse HEAD` == `git rev-parse origin/<current-feature>`，`git status --short` 为空；
+5. 运行 `.agent/bin/workflow-check gate coder-start <task>`；
+6. 只有 Gate `PASS` 后才 HANDOFF → Coder。
+
+`contract.target` 一律写完整 40 位 Commit SHA；不得写 `HEAD`、`HEAD~1`、分支名、Tag、`origin/<branch>` 或其他可移动引用。`coder-start` 会机械核验 target 是真实 commit、是当前 feature HEAD 的祖先，且该 target 上的 `contract.md` 与工作区 `contract.md` 完全一致。
+
+Owner 尚未批准、明确拒绝或要求修改 Contract 时：
+
+- 保持 `contract.status=PENDING`；Owner 明确拒绝时写 `REJECTED` 并记录理由；
+- 不得写 `APPROVED`，也不得为通过 Gate 把状态改成 `NOT_REQUIRED`；
+- Contract 被拒绝或发生实质修订时，必须形成新的 `contract.md` 并重新取得 Owner 明确批准，再形成新的 A1 / A2；旧 A1、旧批准结论与旧 `contract.target` 一律不得复用。
 
 ## 长期 Design（`docs/design/*`）
 
@@ -254,6 +283,6 @@ Analyst 是长期 Design 内容的主责角色。Design Artifact 沉淀项目级
 - Owner 必须决定的问题；
 - Contract 路径和状态。
 
-记录决定时只说明 Owner 选择、已确认约束、剩余风险和下一步。重新分析时只说明分类、证据、Contract 状态和下一步。
+记录决定时只说明 Owner 选择、已确认约束、`A1` / `A2` 完整 SHA、REMOTE_SYNCED、`coder-start` 结果、剩余风险和下一步。重新分析时只说明分类、证据、Contract 状态和下一步。
 
 不要在聊天中复制完整 Contract，不输出内部推理过程，不继续实现或审查代码。

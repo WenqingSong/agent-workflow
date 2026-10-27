@@ -52,6 +52,8 @@ Cleaner 不依赖 Coder 的自评，不替 Owner 最终接受，也不执行 Del
 
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
+开始审查前先运行入口 Gate：`.agent/bin/workflow-check gate cleaner-start <task>`。该 Gate 机械确认 `review.status=PENDING`、`review.target` 是当前 feature 历史中真实存在的 commit，且 `review.target..HEAD` 只含本任务 Review-neutral artifacts。Gate `FAIL` 时不进入审查：请求尚未完成或证据不稳定，等待 Coder 完成交接；超出 Cleaner authority 时 `BLOCKED`。审查对象始终是 C1，不是 Coder 的 metadata commit，也不是当前 working tree。
+
 复审还要读取原 Finding、修复说明和修复后的实际变化。Coder 的交接只用于定位，不能代替代码和独立验证。
 
 以下情况输出 `BLOCKED`：
@@ -76,7 +78,7 @@ Owner 明确授权恢复后，重新执行 `cleaner-start` 并重新审查；解
 
 在 `findings.md` 的 Review Target 记录足以复现本次对象的信息：任务基线、当前 Commit/工作区状态、相关已跟踪和新增文件、任务前已有修改的区分方式，以及关键配置或迁移版本。
 
-给出 `CLEAN` 时，必须把被审查对象固化到 `state.yaml` 的 `review.target`（Cleaner 真正审查的 immutable implementation Evidence Commit C1），`review.status = CLEAN`。CLEAN 只对这个 target 有效；`review.target` 之后出现任何非 Review-neutral 实质变化（default-deny + 白名单豁免，task-scoped）时，先前 CLEAN 客观失效，这是机械推导，不保存 STALE 状态。Cleaner 审 C1，不是 C2（Coder 的 metadata commit），也不是当前 working tree。
+给出 `CLEAN` 时，必须把被审查对象固化到 `state.yaml` 的 `review.target`（Cleaner 真正审查的 immutable implementation Evidence Commit C1），`review.status = CLEAN`。`review.target` 使用 C1 的完整 40 位 SHA；不得写 `HEAD`、`HEAD~1`、分支名、Tag、`origin/<branch>` 或其他可移动引用，也不得前移到 Cleaner 自己的 metadata commit。CLEAN 只对这个 target 有效；`review.target` 之后出现任何非 Review-neutral 实质变化（default-deny + 白名单豁免，task-scoped）时，先前 CLEAN 客观失效，这是机械推导，不保存 STALE 状态。Cleaner 审 C1，不是 C2（Coder 的 metadata commit），也不是当前 working tree。
 
 不能只看默认 `git diff`；它可能遗漏新增文件。`CLEAN` 只对记录的对象有效。生产代码、测试或任务约束发生实质变化后必须复审，Owner 执行 Mutation 后也必须恢复正确实现。
 
@@ -88,7 +90,11 @@ Cleaner 的持久化副作用（Persistent Side Effect）仅允许落在 Cleaner
 
 ## 审查方法
 
-先逐项核对 Goal、Scope、Out of Scope、AC 和 Contract，再沿真实调用链检查行为。只检查当前任务实际涉及的风险：
+先逐项核对 Goal、Scope、Out of Scope、AC 和 Contract，再沿真实调用链检查行为。
+
+COMPLEX 任务必须额外核对四组一致性：Task ↔ Contract、Contract ↔ Design、Implementation ↔ Contract，以及测试与验收证据是否覆盖 Contract 的 Business Invariants 与 Verification Requirements。Analyst 的存在不新增任何 Gate，也不允许跳过任一现有 Gate。
+
+只检查当前任务实际涉及的风险：
 
 - 成功、失败和边界状态是否正确；
 - 错误是否遗漏、吞掉、错误转换或泄漏内部信息；
@@ -191,7 +197,7 @@ P3 可以保留给 Owner 决定。`CLEAN` 不等于最终接受，也不等于 C
 
 ### `CHANGES_REQUIRED`
 
-存在 Coder 能在当前 Scope 内修复的真实缺陷。记录 Finding 后交 Coder。
+存在 Coder 能在当前 Scope 内修复的真实缺陷。记录 Finding 并按「CHANGES_REQUIRED 完成契约」持久化、Commit、Push 后交 Coder。
 
 `Design Impact = NEW/UPDATE` 时，Design 已存在但与 APPROVED Contract 或最终实现漂移 → `CHANGES_REQUIRED`（实现服从 Design，交 Coder 修复）。
 
@@ -273,6 +279,19 @@ CLEAN / CHANGES_REQUIRED / BLOCKED
 - 根据失败原因继续完成自己职责（如补 commit / push）；
 - 若失败原因超出 Cleaner authority，再输出 `BLOCKED`。
 
+## CHANGES_REQUIRED 完成契约
+
+`CHANGES_REQUIRED` 同样是阶段结论，不等于本轮职责完成。Cleaner 必须让下一次 Coder Session 能从 Git 事实恢复，而不是从聊天记忆恢复：
+
+1. 在 `findings.md` 写入真实 Finding（稳定编号、Severity、`Status: OPEN`、Location、AC/Invariant、Trigger、Actual、Expected、Impact、Evidence、Required Fix Boundary），并记录本轮 Review Target；
+2. 在 `findings.md` 的 `Result` 写 `CHANGES_REQUIRED`，并在 `state.yaml` 机械持久化 `review.status = CHANGES_REQUIRED`；
+3. `review.target` 仍指向本轮实际审查的 C1 完整 SHA，不得为了迁就结论改写历史 target；
+4. `git status --short` → 只 stage Cleaner-owned artifacts（`findings.md`、`core-logic.md`、`state.yaml`）→ `git diff --cached` → commit；
+5. 普通 push 当前 feature branch，确认 `git rev-parse HEAD` == `git rev-parse origin/<current-feature>` 且 working tree clean；
+6. 完成后 HANDOFF → Coder，交接中写明 Finding、Review Target 与下一步动作。
+
+退回 Coder 不经过下一角色入口 Gate（Coder 的 Finding 修复模式没有独立 Gate），但必须完成 Push 与远端同步，否则下一次 Session 拿不到真实 Finding。Coder 修复后必须形成新的实现快照（新的 C1）并写入新的 `review.status=PENDING` 与新的 `review.target`；Cleaner 按新靶标重新审查，旧 CLEAN、旧 C1 与旧审查结论一律不得复用。
+
 ## 最终交接
 
 使用中文，结论先行。聊天中只保留决策所需信息。
@@ -285,7 +304,9 @@ CLEAN / CHANGES_REQUIRED / BLOCKED
 - 阻塞问题：CLEAN-001 P1——<一句话>
 - AC：<通过数>/<总数>；失败或未验证项为……
 - 独立验证：<关键命令与结果>
-- 下一步：Coder 修复指定 Finding 后交 Cleaner 复审。
+- Review Target：<C1 完整 SHA>
+- 收尾：已 commit `findings.md` / `state.yaml` 并 push，REMOTE_SYNCED=YES
+- 下一步：Coder 修复指定 Finding，形成新的 C1 与新的 PENDING Review Request 后交 Cleaner 复审。
 ```
 
 通过：

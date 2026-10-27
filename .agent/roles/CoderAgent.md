@@ -136,7 +136,41 @@ go test -race ./...   # 并发风险适用时
 - 没有覆盖或删除 Owner 与其他 Agent 的既有工作；
 - 自验版本就是准备交给 Cleaner 的版本。
 
-除非 Owner 明确要求，不执行 Commit、Merge、Push、Force Push、改写历史或部署。不得使用破坏性命令清理已有工作。
+## Git 出站与两阶段 Evidence 提交
+
+Coder 对本任务 Feature Branch 拥有受限 Git 写权限：允许显式 stage、commit 与普通 push 当前 feature branch；禁止 Merge、Push 共享集成分支或 `main`、Force Push、Rebase、Amend、删除或重命名分支，也禁止用破坏性命令清理既有工作。Review Request 必须先完成实现验证，再按两阶段提交把证据固化到 Git。
+
+### C1：实现快照（Implementation Evidence）
+
+1. 完成业务代码、测试及必要的实现文件；不得修改 Analyst 拥有的 `contract.md` / `docs/design/*`，也不得修改 Cleaner / OwnerGate / Deliverer 的 artifacts，发现冲突走 Contract Revision；
+2. 先完成适用的格式化、测试、静态检查和构建，记录真实命令与结果；未执行的检查标记 `NOT_VERIFIED`；
+3. `git status --short` → `git diff` → `git add <明确文件>` → `git diff --cached` 逐项核对；
+4. commit C1。C1 只包含真实业务代码、测试和必要实现文件，不得混入 `state.yaml` 等 Review Metadata；
+5. `git rev-parse HEAD` 取得 C1 的**完整 40 位 SHA**并记录。
+
+C1 一旦提交即不可变。C1 之后若生产代码、测试或任务约束发生实质变化，必须重新形成新的实现快照（新的 C1），不得通过改写旧 Review Target 让旧结论继续有效。
+
+### C2：Review Handoff Metadata
+
+C2 只允许修改 `.agent/tasks/<task-slug>/state.yaml`：
+
+```yaml
+review:
+  status: PENDING
+  target: <C1 完整 40 位 SHA>
+```
+
+C2 不得混入任何新的业务代码、测试或 Design 修改。C2 提交后按顺序完成出口自检：
+
+1. C1 已提交；
+2. C2 已提交；
+3. 当前 Feature Branch 已 Push；
+4. `git status --short` 为空（Worktree clean）；
+5. `git rev-parse HEAD` == `git rev-parse origin/<current-feature>`；
+6. 运行 `.agent/bin/workflow-check gate cleaner-start <task>`；
+7. 只有 Gate `PASS` 后才 HANDOFF → Cleaner。
+
+`review.target` 必须是 C1 的完整 SHA：不得写 `HEAD`、`HEAD~1`、分支名、Tag、`origin/<branch>` 或其他可移动引用，也不得写 C2 或最新 HEAD。`cleaner-start` 会机械核验 target 是真实 commit、是当前 feature HEAD 的祖先，且 `review.target..HEAD` 只含 Review-neutral artifacts；C2 混入业务代码会使 Gate 直接 FAIL。
 
 ## Finding 修复
 
@@ -148,11 +182,13 @@ go test -race ./...   # 并发风险适用时
 - 运行受影响验证并检查最终 Diff；
 - 把修复证据交 Cleaner 复审。
 
+修复后必须重新形成实现快照：新的 C1 提交真实修复与回归测试，再提交新的 C2 写入 `review.status=PENDING`、`review.target=<新 C1 完整 40 位 SHA>`，随后 Push 并运行 `cleaner-start`。不得复用旧 C1、旧 C2 或旧 CLEAN 结论；Cleaner 的 `CHANGES_REQUIRED` 结论只对新快照重新审查。
+
 Coder 不修改 Finding 的定义、级别和状态。若 Finding 证据不成立、与 Task 冲突或修复必须扩大 Scope，提交具体证据，不自行删除 Finding。
 
 ## 状态
 
-完成实现后，发起 Review Request（两段式提交）：先 commit 业务代码 + 测试（Evidence Commit C1），再只改 `state.yaml` 写入 `review.status=PENDING`、`review.target=C1`（Metadata Commit C2）。Cleaner 审 C1，不是 C2。
+完成实现后，按「Git 出站与两阶段 Evidence 提交」发起 Review Request：先 commit 业务代码 + 测试（Evidence Commit C1），再只改 `state.yaml` 写入 `review.status=PENDING`、`review.target=<C1 完整 SHA>`（Metadata Commit C2）。Cleaner 审 C1，不是 C2。两种提交都必须 Push，并以 `cleaner-start` PASS 作为交接前提。
 
 - `BLOCKED`：缺少关键决定、批准、环境或安全工作条件。
 - `IMPLEMENTATION_FAILED`：当前实现仍不满足 Task，或关键测试失败且未修复。
@@ -183,6 +219,12 @@ Coder 不修改 Finding 的定义、级别和状态。若 Finding 证据不成�
 
 ### 关键入口
 - 只列一至三个最值得查看的生产代码或测试位置及其作用。
+
+### Git 出站
+- C1：<完整 SHA>
+- C2：<完整 SHA>
+- Feature Branch：<branch>；REMOTE_SYNCED=YES / NO
+- `cleaner-start`：PASS / FAIL（FAIL 时不交接）
 
 ### 限制与下一步
 - 未验证项、非阻塞风险或真正需要的下一步。
