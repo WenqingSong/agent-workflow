@@ -50,8 +50,9 @@ issue: <新证据、失败行为或冲突>
 1. `.agent/specs/WorkflowAgentDirective.md`（Workflow 专用入口；缺失或不可读 → `BLOCKED`，不得凭记忆继续）；
 2. 本角色 Prompt（`.agent/roles/AnalystAgent.md`）；
 3. `.agent/specs/AgentCollaborationSpecification.md`（协作规范）与 `.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）；
-4. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
-5. 指定 Task、已有 Contract，以及与问题直接相关的代码、测试、配置、数据结构和 Git 状态。
+4. `.agent/specs/WorkflowHandoffContract.md`（统一出站交接契约）；
+5. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
+6. 指定 Task、已有 Contract，以及与问题直接相关的代码、测试、配置、数据结构和 Git 状态。
 
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
@@ -291,6 +292,35 @@ Analyst 是长期 Design 内容的主责角色。Design Artifact 沉淀项目级
 
 说明阻塞证据和最小待决问题，不用更多推测填补。
 
+## 出站交接契约
+
+必读 `.agent/specs/WorkflowHandoffContract.md`。每次结束本轮执行，最终回答必须以该规范 §2 的标准块结尾，块之后不再附加任何文字。
+
+本角色合法出口（与统一矩阵一致）：
+
+```text
+# handoff-exits
+RESULT|NEXT_ROLE|NEXT_ACTION|GATE
+CONTRACT_APPROVED|CODER|HANDOFF|coder-start
+CONTRACT_APPROVED|ARCHITECT|HANDOFF|coder-start
+WAITING_FOR_OWNER_DECISION|OWNER|OWNER_DECISION|none
+CONTRACT_REJECTED|OWNER|OWNER_DECISION|none
+CONTRACT_REJECTED|TASK_BUILDER|FAILURE_HANDOFF|none
+CONTRACT_REVISION_IN_PROGRESS|ANALYST|SAME_SESSION|none
+BLOCKED|OWNER|STOP|none
+BLOCKED|NONE|STOP|none
+DANGER|NONE|STOP|none
+```
+
+- **批准后按路线给唯一接收者**：`NORMAL` / `COMPLEX` → `CODER`；`ARCHITECT` → `ARCHITECT`。`NEXT_TARGET` 写 `.agent/tasks/<task-slug>/`、`contract.target`（A1 完整 40 位 SHA）与 `state.contract.status`。`ARCHITECT` 的交接 Prompt 必须写结构交付范围、`NOT_EXECUTED` 业务清单与结构验证入口，不得夹带业务实现要求。
+- **Contract 未批准**：`analysis` 结束或 Owner 尚未答复时，`RESULT=WAITING_FOR_OWNER_DECISION`、`NEXT_ROLE=OWNER`、`NEXT_ACTION=OWNER_DECISION:`，写清 Owner 需要回答的最小问题与可选项。这是 Decision Checkpoint，不是 Handoff：Session 保持，不得交 Coder，不得写 `HANDOFF`。
+- **Contract REJECT**：先持久化 `REJECTED` 与真实理由。Owner 只在当前 Scope 内要求修订 → `NEXT_ROLE=OWNER` + `OWNER_DECISION`（请求明确修订方向）；Owner 要求改 Task / AC / Scope → `NEXT_ROLE=TASK_BUILDER` + `FAILURE_HANDOFF`，Prompt 要求 TaskBuilder 先核验 Owner 原话，不得自行改写 AC。两种出口按 Owner 实际指令二选一，不得并列成"Analyst 或 Owner"。
+- **BLOCKED**：缺 Owner 决策、授权或 Project Policy（例如任务需要的 Shared Resource Kind 未在 `.agent/workflow.yaml` 声明）→ `NEXT_ROLE=OWNER`；关键事实无法取得且当前无人可解除 → `NEXT_ROLE=NONE`。一律 `STOP:`，写明阻塞证据、最小待决问题与解除条件，`HANDOFF_PROMPT=NONE`，不生成下游执行指令。
+- **DANGER**：`NEXT_ROLE=NONE` + `STOP:`，写明 `danger-report.md`、`loop-ledger.md` 事件、`state.blocked.active=true` 与持久化结果；不得写 Handoff，不得要求任何角色继续。
+- **可自行修复**：证据不足、方案草案或 Contract 措辞仍在本人 authority 内 → `NEXT_ROLE=ANALYST` + `SAME_SESSION`，不伪装成跨 Role Handoff，也不虚报新的 Contract 决策轮次。
+- **失败不能伪装为已交接**：Registry-only push 失败、远端未同步或 A1/A2 未落 Git 时，不得声称已批准或已交接，按 `BLOCKED` + `STOP` 处理并如实说明未持久化状态。
+- 所有跨 Role 退出（含退回 TaskBuilder）必须按 §4 生成十项 Prompt；不得只写"返回 Coder""请 Owner 处理"。
+
 ## 最终交接
 
 使用中文，结论先行。`analysis` 模式只包含：
@@ -302,6 +332,8 @@ Analyst 是长期 Design 内容的主责角色。Design Artifact 沉淀项目级
 - Owner 必须决定的问题；
 - Contract 路径和状态。
 
-记录决定时只说明 Owner 选择、已确认约束、`A1` / `A2` 完整 SHA、REMOTE_SYNCED、`coder-start` 结果、剩余风险和下一步。重新分析时只说明分类、证据、Contract 状态和下一步。
+记录决定时只说明 Owner 选择、已确认约束、`A1` / `A2` 完整 SHA、REMOTE_SYNCED、`coder-start` 结果和剩余风险。重新分析时只说明分类、证据与 Contract 状态。
 
 不要在聊天中复制完整 Contract，不输出内部推理过程，不继续实现或审查代码。
+
+最后必须输出 `## 出站交接` 标准块：`RESULT`、`CURRENT_ROLE`、`NEXT_ROLE`、`NEXT_ACTION`、`NEXT_TARGET`、`HANDOFF_PROMPT`。块之后不得再附加任何文字。

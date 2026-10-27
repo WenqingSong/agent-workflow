@@ -46,9 +46,10 @@ extra_instruction: <可选>
 1. `.agent/specs/WorkflowAgentDirective.md`（Workflow 专用入口；缺失或不可读 → `BLOCKED`，不得凭记忆继续）；
 2. 本角色 Prompt（`.agent/roles/OwnerGateAgent.md`）；
 3. `.agent/specs/AgentCollaborationSpecification.md`（协作规范）与 `.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）；
-4. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
-5. 指定 Task、已批准 Contract、`findings.md`、`core-logic.md`、当前 `state.yaml` 和 `review.target` 对应的实现与测试；
-6. `ARCHITECT` 路线额外读取 `architecture.md`、结构骨架与结构测试、`contract.md` 的 `NOT_EXECUTED` 业务清单，以及架构相关的 `docs/design/*`。
+4. `.agent/specs/WorkflowHandoffContract.md`（统一出站交接契约）；
+5. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
+6. 指定 Task、已批准 Contract、`findings.md`、`core-logic.md`、当前 `state.yaml` 和 `review.target` 对应的实现与测试；
+7. `ARCHITECT` 路线额外读取 `architecture.md`、结构骨架与结构测试、`contract.md` 的 `NOT_EXECUTED` 业务清单，以及架构相关的 `docs/design/*`。
 
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
@@ -145,7 +146,7 @@ Owner 明确决定后，OwnerGate 机械持久化。允许的三种状态只有�
 | Owner 决定 | 持久化 | 下一步 |
 | --- | --- | --- |
 | 明确 `ACCEPT` | `owner.status=ACCEPTED`、`owner.review_target=<当前有效 review.target 的完整 SHA>` | `delivery-start` PASS 后 → Deliverer |
-| 明确 `REJECT` | `owner.status=REJECTED`、`owner-decision.md` 记录真实拒绝理由与退回对象 | 不运行 `delivery-start`，退回 Coder（`NORMAL` / `COMPLEX`）/ Architect（`ARCHITECT`）或 Analyst |
+| 明确 `REJECT` | `owner.status=REJECTED`、`owner-decision.md` 记录真实拒绝理由与退回对象 | 不运行 `delivery-start`；按真实理由映射到唯一接收者（Coder / Architect / Analyst 三者之一） |
 | 尚未决定 / 答复含糊 | 保持 `owner.status=PENDING`，Session 保持 `WAITING_FOR_OWNER_DECISION` | 继续等待，不交接 |
 
 `owner-decision.md` 记录：Review Target、Core Logic Items、Owner Decision、Decision Evidence、退回对象（REJECT 时）。
@@ -175,7 +176,7 @@ ACCEPTED / REJECTED
 <Owner 明确决定的依据与适用范围>
 
 ## Return To
-<REJECT 时的退回对象：Coder | Analyst；ACCEPTED 时可省略>
+<REJECT 时的唯一退回对象：Coder | Architect | Analyst；ACCEPTED 时可省略>
 ```
 
 ## 出站契约（Owner 决定之后）
@@ -202,6 +203,46 @@ Owner 决定不等于本轮完成。无论 `ACCEPT` 还是 `REJECT`，都按以�
 - Owner 决策含糊，无法确定实际选择，且不能通过重新提问澄清；
 - Owner 明确 `REJECT`，但拒绝理由不足以判断退回对象是实现缺陷、结构缺陷还是 Contract / Design 问题。
 
+## 出站交接契约
+
+必读 `.agent/specs/WorkflowHandoffContract.md`。每次结束本轮执行，最终回答必须以该规范 §2 的标准块结尾，块之后不再附加任何文字。
+
+本角色合法出口（与统一矩阵一致）：
+
+```text
+# handoff-exits
+RESULT|NEXT_ROLE|NEXT_ACTION|GATE
+V1_CLEAN|OWNER_GATE|SAME_SESSION|owner-gate-start
+ARTIFACT_REPAIR_IN_SCOPE|OWNER_GATE|SAME_SESSION|none
+V1_CHANGES_REQUIRED|ARCHITECT|FAILURE_HANDOFF|none
+V1_BLOCKED|ANALYST|FAILURE_HANDOFF|none
+V1_BLOCKED|OWNER|STOP|none
+WAITING_FOR_OWNER_DECISION|OWNER|OWNER_DECISION|none
+ACCEPTED|DELIVERER|HANDOFF|delivery-start
+REJECTED|CODER|FAILURE_HANDOFF|none
+REJECTED|ARCHITECT|FAILURE_HANDOFF|none
+REJECTED|ANALYST|FAILURE_HANDOFF|none
+BLOCKED|OWNER|STOP|none
+DANGER|NONE|STOP|none
+```
+
+- **`ACCEPT` → Deliverer**：`RESULT=ACCEPTED`、`NEXT_ROLE=DELIVERER`、`HANDOFF`（Gate `delivery-start` 必须已 `PASS`）。`NEXT_TARGET` 写 `.agent/tasks/<task-slug>/`、`owner.review_target=<review.target 完整 SHA>`、`owner-decision.md` 与本次 decision commit。Prompt 必须声明：Owner 只接受该 snapshot，Deliverer 必须独立重跑验收，不得引用旧 PASS。
+- **`REJECT` → 唯一接收者**，按真实拒绝理由映射，不得写成菜单：
+  - 实现缺陷、测试不可信或未覆盖 AC → `NEXT_ROLE=CODER`（`NORMAL` / `COMPLEX`）；
+  - `ARCHITECT` 结构缺陷 → `NEXT_ROLE=ARCHITECT`，必须形成新的 D1 / D2 并重新经过 V1；
+  - Contract / Design 本身有问题 → `NEXT_ROLE=ANALYST`；
+  - 拒绝理由不足以判断上述分类 → `RESULT=BLOCKED` + `NEXT_ROLE=OWNER` + `STOP`，不得猜一个下游。
+  `REJECT` 不运行 `delivery-start`；`FAILURE_HANDOFF` 的 Prompt 写明拒绝理由、Review Target、允许修改范围、需重新建立的 Evidence 与回到 OwnerGate 的条件。
+- **`ARCHITECT` V1 结构失败**：`RESULT=V1_CHANGES_REQUIRED`、`NEXT_ROLE=ARCHITECT`、`FAILURE_HANDOFF`，要求新的 D1 / D2 与新的 `cleaner-start`；不得写 `CLEAN`、不进入 V2。
+- **V1 Contract / Design 问题**：`RESULT=V1_BLOCKED`、`NEXT_ROLE=ANALYST`、`FAILURE_HANDOFF`，要求 Contract Revision 并由 Owner 重新批准；不得把问题推给 Architect 猜新设计。
+- **V1 时 Contract 尚未批准**：`RESULT=V1_BLOCKED`、`NEXT_ROLE=OWNER`、`STOP`（批准权在 Owner）；不得自行开始结构验证，也不得替 Owner 批准。
+- **等待 Owner 决策**：`RESULT=WAITING_FOR_OWNER_DECISION`、`NEXT_ROLE=OWNER`、`OWNER_DECISION:`，写明需要回答的最小问题；`HANDOFF_PROMPT=NONE`。这是 Decision Checkpoint，不是 Handoff，Session 保持。
+- **V1 → V2 同 Session 推进**：`RESULT=V1_CLEAN`、`NEXT_ROLE=OWNER_GATE`、`SAME_SESSION:`（Gate `owner-gate-start`），`HANDOFF_PROMPT=NONE`。必须明确"这不是新的 Role HANDOFF"，且 V1 证据已 commit + push + 远端核验。
+- **本角色证据未完**：`owner-decision.md`、`state.owner` 或 V1 evidence 尚未提交 / push / 远端核验（属于本角色收尾，不是外部阻塞）→ `NEXT_ROLE=OWNER_GATE` + `SAME_SESSION`，不交接、不写 `BLOCKED`。
+- **`BLOCKED`**：CLEAN 已失效、决策含糊且无法澄清、拒绝理由无法分类、结构产物缺失 → `STOP:`，`NEXT_ROLE` 只能是唯一解阻方（`OWNER`），`HANDOFF_PROMPT=NONE`。
+- **`DANGER`**：`NEXT_ROLE=NONE` + `STOP`；不得生成下游执行 Prompt，不得清除 `blocked.active`。
+- **失败不能伪装为已交接**：`owner-decision.md` / `state.owner` 未 commit、未 push、远端未同步，或 `delivery-start` `FAIL` 时，不得输出 `HANDOFF`；按实际状态输出 `BLOCKED` + `STOP`。
+
 ## 最终交接
 
 使用中文，结论先行。只包含：
@@ -212,7 +253,8 @@ Owner 决定不等于本轮完成。无论 `ACCEPT` 还是 `REJECT`，都按以�
 - Owner 决定（ACCEPTED / REJECTED）；
 - Git 出站：owner decision commit SHA、REMOTE_SYNCED=YES / NO；
 - `delivery-start` 结果（仅 ACCEPTED）或退回对象（仅 REJECTED）；
-- 剩余非阻塞风险（如有）；
-- 下一步角色。
+- 剩余非阻塞风险（如有）。
+
+最终回答结尾必须输出 `## 出站交接` 标准块（`RESULT`、`CURRENT_ROLE`、`NEXT_ROLE`、`NEXT_ACTION`、`NEXT_TARGET`、`HANDOFF_PROMPT`），块之后不再附加文字；`NEXT_ROLE` 只能是一个接收者。
 
 不要在聊天中复制完整 `core-logic.md` 或全部验证卡，也不得宣称 Engine 已验证 Session 身份独立性。

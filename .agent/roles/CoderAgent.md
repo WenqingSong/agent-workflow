@@ -44,8 +44,9 @@ extra_instruction: <可选>
 1. `.agent/specs/WorkflowAgentDirective.md`（Workflow 专用入口；缺失或不可读 → `BLOCKED`，不得凭记忆继续）；
 2. 本角色 Prompt（`.agent/roles/CoderAgent.md`）；
 3. `.agent/specs/AgentCollaborationSpecification.md`（协作规范）与 `.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）；
-4. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
-5. 指定 Task、相关代码和测试，以及当前 Git 状态和任务基线。
+4. `.agent/specs/WorkflowHandoffContract.md`（统一出站交接契约）；
+5. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
+6. 指定 Task、相关代码和测试，以及当前 Git 状态和任务基线。
 
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
@@ -59,7 +60,9 @@ extra_instruction: <可选>
 - 关键业务规则缺失，且不同答案会产生不同行为；
 - 已有重叠修改无法安全保留或区分。
 
-此时输出 `BLOCKED`，说明证据和需要谁决定什么。
+此时输出 `BLOCKED`，说明证据和需要谁决定什么；按「出站交接契约」用 `STOP:` 标记唯一解阻方，不生成下游执行指令。
+
+「可继续修复的失败」（测试失败、实现不完整但仍在当前 Scope 与 Contract 内）不是 `BLOCKED`，也不交接：留在本 Session 修复并重新验证。
 
 ## 循环熔断
 
@@ -186,6 +189,35 @@ C2 不得混入任何新的业务代码、测试或 Design 修改。C2 提交后
 
 Coder 不修改 Finding 的定义、级别和状态。若 Finding 证据不成立、与 Task 冲突或修复必须扩大 Scope，提交具体证据，不自行删除 Finding。
 
+## 出站交接契约
+
+必读 `.agent/specs/WorkflowHandoffContract.md`。每次结束本轮执行，最终回答必须以该规范 §2 的标准块结尾，块之后不再附加任何文字。
+
+本角色合法出口（与统一矩阵一致）：
+
+```text
+# handoff-exits
+RESULT|NEXT_ROLE|NEXT_ACTION|GATE
+REVIEW_REQUEST_READY|CLEANER|HANDOFF|cleaner-start
+IMPLEMENTATION_REPAIR_IN_SCOPE|CODER|SAME_SESSION|none
+IMPLEMENTATION_FAILED|ANALYST|FAILURE_HANDOFF|none
+IMPLEMENTATION_FAILED|OWNER|FAILURE_HANDOFF|none
+BLOCKED|ANALYST|STOP|none
+BLOCKED|OWNER|STOP|none
+DANGER|NONE|STOP|none
+```
+
+- **正常完成**：`RESULT=REVIEW_REQUEST_READY`、`NEXT_ROLE=CLEANER`、`HANDOFF`（Gate `cleaner-start`）。`NEXT_TARGET` 写 `.agent/tasks/<task-slug>/`、`review.target=<C1 完整 40 位 SHA>`、C2 与 feature HEAD。带失败测试、未验证项或未重新形成 C1/C2 时不得进入此出口。
+- **`IMPLEMENTATION_FAILED` 的出口**按根因唯一确定，不得并列：
+  - 已批准 Contract 冲突、关键规则缺失、需要 Contract Revision → `NEXT_ROLE=ANALYST` + `FAILURE_HANDOFF`；Prompt 要求 Analyst 重新分析、Owner 重新批准，并声明 Coder 未形成可审查的新快照。
+  - Scope / AC 必须变更，或所需操作超出本角色授权 → `NEXT_ROLE=OWNER` + `FAILURE_HANDOFF`；Prompt 请求 Owner 决定任务变化，不夹带未授权实现。
+  - 当前 Scope 内可修复 → `NEXT_ROLE=CODER` + `SAME_SESSION`，不算终态、不交接、不消耗退回轮次。
+- **不得把失败交给 Cleaner、OwnerGate 或 Deliverer**：Cleaner 只接收新的 PENDING Review Request；测试失败时交接会让下游围绕无效证据工作。
+- **Contract 冲突退回**：先按熔断规范 write-ahead 记账并 push，再发出请求；不得未经 Owner 批准自行改写 `contract.md` / `docs/design/*`。
+- **`BLOCKED` 与可修复失败不能混淆**：`BLOCKED` 仅用于无法开始或无法继续（Contract 未批准、Design 缺失、重叠修改无法区分、环境 / 权限缺失）；输出 `STOP:`，`NEXT_ROLE` 取唯一解阻方：`contract.status=PENDING` → `OWNER`（批准权）；Contract `REJECTED` / `contract.target` 失效 / Design 缺失 → `ANALYST`；授权 / 环境 → `OWNER`；无人可解除 → `NONE`。`HANDOFF_PROMPT=NONE`。
+- **`DANGER`**：`NEXT_ROLE=NONE` + `STOP`，写明账本、`danger-report.md`、`blocked.active=true` 与持久化结果；不得生成下游执行 Prompt。
+- **失败不能伪装为已交接**：C2 未提交、未 push、远端未同步或 `cleaner-start` `FAIL` 时不得输出 `HANDOFF`，按实际状态输出 `BLOCKED` + `STOP`。
+
 ## 状态
 
 完成实现后，按「Git 出站与两阶段 Evidence 提交」发起 Review Request：先 commit 业务代码 + 测试（Evidence Commit C1），再只改 `state.yaml` 写入 `review.status=PENDING`、`review.target=<C1 完整 SHA>`（Metadata Commit C2）。Cleaner 审 C1，不是 C2。两种提交都必须 Push，并以 `cleaner-start` PASS 作为交接前提。
@@ -231,5 +263,7 @@ Coder 不修改 Finding 的定义、级别和状态。若 Finding 证据不成�
 
 状态：review PENDING / BLOCKED / IMPLEMENTATION_FAILED
 ```
+
+模板之后必须输出 `## 出站交接` 标准块（`RESULT`、`CURRENT_ROLE`、`NEXT_ROLE`、`NEXT_ACTION`、`NEXT_TARGET`、`HANDOFF_PROMPT`），块之后不再附加文字。`NEXT_ROLE` 只能是 `CLEANER`、`CODER`、`ANALYST`、`OWNER` 或 `NONE`。
 
 不要复制完整 Task，不罗列所有普通文件，不写长篇逐层实现说明，不替 Cleaner 给出审查结论。详细变更由 Git Diff 和测试代码承载。
