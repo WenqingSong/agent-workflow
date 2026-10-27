@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -19,6 +20,7 @@ import (
 // 从而在 v2/v3 之间严格拒绝混用 legacy 与 generic 资源字段（避免半迁移 State）。
 type stateFile struct {
 	SchemaVersion int                  `yaml:"schema_version"`
+	Route         Route                `yaml:"route"`
 	TaskID        string               `yaml:"task_id"`
 	Contract      Contract             `yaml:"contract"`
 	Resources     map[string]yaml.Node `yaml:"resources"`
@@ -55,6 +57,7 @@ func parseState(raw []byte) (State, error) {
 
 	s := State{
 		SchemaVersion: f.SchemaVersion,
+		Route:         f.Route,
 		TaskID:        f.TaskID,
 		Contract:      f.Contract,
 		Review:        f.Review,
@@ -71,6 +74,27 @@ func parseState(raw []byte) (State, error) {
 		return State{}, err
 	}
 	return s, nil
+}
+
+// routeFactFile 只捕获历史 commit 中的顶层 route 字段。
+//
+// 这个读取器刻意不使用 strict decode：它的输入是历史 Evidence Commit 中的
+// state.yaml（可能来自更旧的 schema 或其他 Agent 的临时形态），目标只有
+// 「这个 commit 当时声明了哪条路线」这一件事。任何未知字段都不应让路线核对
+// 变成 schema 错误；路线本身是否合法仍由 schemaValidation 判定。
+type routeFactFile struct {
+	Route Route `yaml:"route"`
+}
+
+// extractRouteFact 从 raw state.yaml 中读取顶层 route。
+// 返回 ok=false 表示该 commit 未记录路线事实（Legacy），调用方不得推断。
+func extractRouteFact(raw []byte) (Route, bool, error) {
+	var f routeFactFile
+	if err := yaml.Unmarshal(raw, &f); err != nil {
+		return "", false, fmt.Errorf("解析历史 state.yaml 的 route: %w", err)
+	}
+	route := strings.TrimSpace(f.Route)
+	return route, route != "", nil
 }
 
 // normalizeResources 按 schema_version 归一化资源字段为 generic Reservations。

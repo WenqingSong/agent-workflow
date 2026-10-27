@@ -50,6 +50,17 @@ func schemaValidation(s State) []Issue {
 			Reason:   "state.yaml 必须包含 task_id",
 		})
 	}
+	// route 是可选的路线事实：省略表示历史任务（Legacy），不做任何推断；
+	// 一旦出现，就必须是合法枚举，避免拼写错误被当成「另一条路线」。
+	if s.Route != "" && !ValidRoute(s.Route) {
+		issues = append(issues, Issue{
+			Task:     task,
+			Check:    "route enum",
+			Actual:   s.Route,
+			Expected: "NORMAL | COMPLEX | ARCHITECT",
+			Reason:   "route 取值非法",
+		})
+	}
 	if !ValidContractStatus(s.Contract.Status) {
 		issues = append(issues, Issue{
 			Task:     task,
@@ -126,4 +137,19 @@ func (v *Validator) loadDevelopRegistries(s State) (map[string][]RegistryEntry, 
 // contractPath 返回当前 task 的 contract.md 相对路径。
 func contractPath(taskSlug string) string {
 	return filepath.Join(".agent", "tasks", taskSlug, "contract.md")
+}
+
+// statePath 返回当前 task 的 state.yaml 相对路径。
+func statePath(taskSlug string) string {
+	return filepath.Join(".agent", "tasks", taskSlug, "state.yaml")
+}
+
+// taskDocPath 返回当前 task 的 task.md 相对路径。
+func taskDocPath(taskSlug string) string {
+	return filepath.Join(".agent", "tasks", taskSlug, "task.md")
+}
+
+// architecturePath 返回当前 task 的 architecture.md 相对路径（仅 ARCHITECT 路线需要）。
+func architecturePath(taskSlug string) string {
+	return filepath.Join(".agent", "tasks", taskSlug, "architecture.md")
 }

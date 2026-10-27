@@ -6,7 +6,11 @@
 // 用法：
 //
 //	workflow-check gate <coder-start|cleaner-start|owner-gate-start|delivery-start|merge-ready> <task> [--root DIR]
+//	workflow-check route <task> [--allow-legacy] [--root DIR]
 //	workflow-check version [--json]
+//
+// route 子命令是路线事实自检（R-1 ~ R-4），不是 Gate：它不产生 Handoff 授权，
+// 也不改变任何 Gate 语义。默认要求 route 事实存在；历史任务需要显式 --allow-legacy。
 //
 // exit code：
 //   - 0：PASS；
@@ -62,8 +66,13 @@ func run(args []string) int {
 		return runVersion(positional[1:], os.Stdout, os.Stderr)
 	}
 
+	if len(positional) >= 1 && positional[0] == "route" {
+		return runRoute(positional[1:], root)
+	}
+
 	if len(positional) < 1 || positional[0] != "gate" {
 		fmt.Fprintln(os.Stderr, "usage: workflow-check gate <coder-start|cleaner-start|owner-gate-start|delivery-start|merge-ready> <task> [--root DIR]")
+		fmt.Fprintln(os.Stderr, "       workflow-check route <task> [--allow-legacy] [--root DIR]")
 		return 2
 	}
 	if len(positional) < 3 {
@@ -127,6 +136,70 @@ func printResult(gateName string, res workflow.Result) int {
 		return 2
 	default:
 		fmt.Printf("ERROR    gate=%s unknown status %q\n", gateName, res.Status)
+		return 2
+	}
+}
+
+// runRoute 处理 `workflow-check route <task> [--allow-legacy] [--root DIR]`。
+//
+// route 自检只依赖 state.yaml / task.md 与只读 Git 事实，不读取 .agent/workflow.yaml
+// （Registry 与 integration branch 与路线事实无关），因此 Config 留空。
+func runRoute(args []string, root string) int {
+	allowLegacy := false
+	var taskArg string
+	for _, a := range args {
+		switch {
+		case a == "--allow-legacy":
+			allowLegacy = true
+		case strings.HasPrefix(a, "-"):
+			fmt.Fprintf(os.Stderr, "error: route 不支持参数 %q\n", a)
+			fmt.Fprintln(os.Stderr, "usage: workflow-check route <task> [--allow-legacy] [--root DIR]")
+			return 2
+		case taskArg == "":
+			taskArg = a
+		default:
+			fmt.Fprintln(os.Stderr, "error: route 只接受一个 task 参数")
+			return 2
+		}
+	}
+	if taskArg == "" {
+		fmt.Fprintln(os.Stderr, "usage: workflow-check route <task> [--allow-legacy] [--root DIR]")
+		return 2
+	}
+	if root == "" {
+		root = findRoot()
+	}
+	git := &workflow.ExecGit{Root: root}
+	v := &workflow.Validator{Root: root, Git: git}
+
+	taskDir, err := resolveTaskDir(root, taskArg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 2
+	}
+	return printRouteReport(taskDir, v.CheckRoute(taskDir, !allowLegacy))
+}
+
+func printRouteReport(taskDir string, rep workflow.RouteReport) int {
+	task := filepath.Base(taskDir)
+	switch rep.Result.Status {
+	case workflow.StatusPass:
+		if rep.Legacy {
+			fmt.Printf("ROUTE_LEGACY task=%s route=<absent>\n", task)
+		} else {
+			fmt.Printf("ROUTE_OK     task=%s route=%s\n", task, rep.Route)
+		}
+		return 0
+	case workflow.StatusFail:
+		for _, iss := range rep.Result.Issues {
+			fmt.Printf("ROUTE_FAIL   %s\n", iss.String())
+		}
+		return 1
+	case workflow.StatusError:
+		fmt.Printf("ROUTE_ERROR  task=%s %s\n", task, rep.Result.Error)
+		return 2
+	default:
+		fmt.Printf("ROUTE_ERROR  task=%s unknown status %q\n", task, rep.Result.Status)
 		return 2
 	}
 }

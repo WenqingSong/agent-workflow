@@ -10,8 +10,12 @@ import (
 // 本文件实现 Workflow V2 的五个显式 Gate 及其共享判定。
 //
 // Gate 是 Handoff 前的机械出站检查，Validator 只读。
-// 共享判定围绕三个 Evidence Binding（Contract / Review / Delivery）+ 两个横切不变量
-// （resourcesAuthorized / ownerAcceptanceValid）+ handoffReady。
+// 共享判定围绕三个 Evidence Binding（Contract / Review / Delivery）+ 三个横切不变量
+// （resourcesAuthorized / ownerAcceptanceValid / routeValid）+ handoffReady。
+//
+// routeValid 自 V3.2.0 起在五个 Gate 上统一生效：它校验 state.route（路线事实）
+// 与 Contract、task.md Complexity、Contract Approval 证据和 Review 证据形态是否
+// 自洽；route 缺省的历史任务不做任何推断（见 route.go）。
 
 // failResult 构造一个单 issue 的 FAIL 结果。
 func failResult(task, check, actual, expected, reason string) Result {
@@ -55,6 +59,9 @@ func (v *Validator) GateCoderStart(taskDir string) Result {
 	if res := blockedActive(taskSlug, s, "Coder Start", "任务被阻塞，不得开始实现"); res.Status != StatusPass {
 		return res
 	}
+	if res := v.routeValid(taskSlug, s); res.Status != StatusPass {
+		return res
+	}
 	if res := v.handoffReady(); res.Status != StatusPass {
 		return res
 	}
@@ -78,6 +85,9 @@ func (v *Validator) GateCleanerStart(taskDir string) Result {
 		return Result{Status: StatusFail, Issues: issues}
 	}
 	if res := blockedActive(taskSlug, s, "Cleaner Start", "任务被阻塞，不得开始清理复核"); res.Status != StatusPass {
+		return res
+	}
+	if res := v.routeValid(taskSlug, s); res.Status != StatusPass {
 		return res
 	}
 	if s.Review.Status != ReviewPending {
@@ -115,6 +125,9 @@ func (v *Validator) GateOwnerGateStart(taskDir string) Result {
 	if res := blockedActive(taskSlug, s, "Owner Gate Start", "任务被阻塞，不得请求 Owner 决策"); res.Status != StatusPass {
 		return res
 	}
+	if res := v.routeValid(taskSlug, s); res.Status != StatusPass {
+		return res
+	}
 	if res := v.handoffReady(); res.Status != StatusPass {
 		return res
 	}
@@ -139,6 +152,9 @@ func (v *Validator) GateDeliveryStart(taskDir string) Result {
 		return Result{Status: StatusFail, Issues: issues}
 	}
 	if res := blockedActive(taskSlug, s, "Delivery Start", "任务被阻塞，不得开始验收"); res.Status != StatusPass {
+		return res
+	}
+	if res := v.routeValid(taskSlug, s); res.Status != StatusPass {
 		return res
 	}
 	if res := v.contractValid(taskSlug, s); res.Status != StatusPass {
@@ -185,6 +201,9 @@ func (v *Validator) GateMergeReady(taskDir string) Result {
 		return Result{Status: StatusFail, Issues: issues}
 	}
 	if res := blockedActive(taskSlug, s, "Merge Ready", "任务被阻塞，不得 Merge Ready"); res.Status != StatusPass {
+		return res
+	}
+	if res := v.routeValid(taskSlug, s); res.Status != StatusPass {
 		return res
 	}
 	if res := v.contractValid(taskSlug, s); res.Status != StatusPass {
