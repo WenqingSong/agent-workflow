@@ -112,7 +112,8 @@ archive top-level: agent-workflow-src-<commit12>/
 | Release Binary 位置 | 宿主 `.agent/bin/workflow-check`（`0755`，被 `.agent/bin/.gitignore` 忽略） |
 | 发布 Binary 命名 | `workflow-check_3.1.0_<goos>_<goarch>[.exe]`；四个目标：`linux_amd64`、`linux_arm64`、`darwin_arm64`、`windows_amd64` |
 | Binary 构建参数 | `CGO_ENABLED=0`、`GOWORK=off`、`GOFLAGS=-mod=readonly`、`go build -trimpath -buildvcs=false -mod=readonly`；`-ldflags="-s -w -X main.version=<VERSION> -X main.commit=<HEAD> -X main.buildSource=release"` |
-| Binary 版本可核验 | `workflow-check version` / `version --json` 输出 framework_version、source_commit、build_source、go_version、platform；未注入版本时为 `dev` / `unknown` |
+| Binary 版本可核验 | `workflow-check version` / `version --json` 输出 framework_version、source_commit、build_source、go_version、platform；`build_source=release` 表示发布资产，`source` 表示从分发包 Engine 构建，未注入时为 `dev` / `unknown` |
+| 安装后 Binary 自证 | 从分发包构建的 `.agent/bin/workflow-check` 注入分发包的版本与 Commit（`build_source=source`）；使用发布资产安装时为 `build_source=release` |
 | Binary 来源核验 | 必须与 `source.commit` 使用同一 Engine 源码构建；安装时传 `--workflow-check`、`--workflow-check-sha256`、`--workflow-check-commit` |
 | 校验和文件 | `SHA256SUMS`（`<sha>  <file>`，按文件名排序）；覆盖四平台 Binary、Source Distribution、Source Distribution 校验文件与 Release Notes |
 | 元数据文件 | `version.json`：Version、Tag、Source Commit、Go Toolchain、Build Flags、平台矩阵、每项资产 SHA256 与验证等级、Distribution Manifest 信息、`published_status=NOT_RELEASED` |

@@ -78,7 +78,12 @@
 
 ## External workflow-check
 
-默认从分发包内同一 Commit 的 Engine 构建。若使用 P08 发布的 binary：
+默认从分发包内同一 Commit 的 Engine 构建。构建时注入分发包自身的
+`main.version` / `main.commit` 与 `buildSource=source`，因此安装后的
+`.agent/bin/workflow-check version` 会报告真实来源版本与 Commit，
+不会停留在 `dev` / `unknown`。发布资产使用 `buildSource=release` 区分。
+
+若使用 P08 发布的 binary：
 
 ```bash
 --workflow-check /path/to/workflow-check \

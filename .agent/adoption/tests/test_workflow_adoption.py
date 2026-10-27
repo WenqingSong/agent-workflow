@@ -548,6 +548,19 @@ class InstallE2ETests(unittest.TestCase):
         self.assertTrue((host / ".agent/upstream.yaml").is_file())
         self.assertTrue((host / ".agent/bin/workflow-check").is_file())
 
+        # 从分发包构建的 binary 必须自证来源：版本与 Commit 来自分发包，
+        # build_source=source 表示“由源码构建”，与发布资产 build_source=release 区分。
+        version_proc = subprocess.run(
+            [str(host / ".agent/bin/workflow-check"), "version", "--json"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(version_proc.returncode, 0, version_proc.stdout + version_proc.stderr)
+        info = json.loads(version_proc.stdout)
+        self.assertEqual(info["framework_version"], manifest["framework_version"])
+        self.assertEqual(info["source_commit"], self.commit)
+        self.assertEqual(info["build_source"], "source")
+
     def dist_for_source(self) -> dict:
         # A separate output dir avoids depending on a previous test's dist.
         return dist(self.source, self.tmp / "dist-for-manifest")
