@@ -2,9 +2,11 @@
 
 `.agent/` 是 Workflow V3 的 Repository Runtime Namespace：集中存放角色 Prompt、协作规范、职责边界、Adoption 协议、模板、机器配置、Registry 与运行时 Task Artifact。Agent 正常执行 Workflow 时，主要读取本目录。
 
-> **Workflow V3 Baseline**（`.agent/VERSION` = `3.0.0`）
+> **Workflow V3 Baseline**（`.agent/VERSION` = `3.1.0`）
 >
-> 当前 Workflow major version = **3**。Baseline 包含：six-role independent-session workflow、Evidence Snapshot、machine gates、Generic Shared Resources、strict YAML、independent Workflow Engine module、Adoption mechanism。
+> 当前 Workflow major version = **3**。Baseline 包含：seven-role independent-session workflow（`NORMAL` / `COMPLEX` 六角色 + `ARCHITECT` 的 Architect）、Evidence Snapshot、machine gates、Generic Shared Resources、strict YAML、two-round loop circuit breaker（DANGER）、independent Workflow Engine module、Adoption mechanism、release engineering（可校验资产与 `workflow-check version`）。
+>
+> Release Status：源码版本 `3.1.0` 是发布候选；`v3.1.0` Tag、正式 Release 与 published 状态由发布流水线产生，当前为 `NOT_RELEASED`。
 >
 > Cross-project Adoption Dogfood：**NOT PERFORMED**（DEFERRED BY OWNER）。
 >
@@ -43,6 +45,10 @@ go -C .agent/engine build -o ../bin/workflow-check ./cmd/workflow-check
 
 # 运行（正式 Gate 机器入口优先 direct binary，保留 0/1/2 exit code）
 .agent/bin/workflow-check gate <gate> <task>
+
+# 自描述版本信息（不读取 workflow.yaml，不需要仓库根解析）
+.agent/bin/workflow-check version
+.agent/bin/workflow-check version --json
 
 # 测试 / 静态检查（Engine 与 Business 分开运行）
 GOWORK=off go -C .agent/engine test ./...
@@ -90,9 +96,9 @@ Repository Root 通过 `git rev-parse --show-toplevel` 解析，与 Engine Modul
 - 默认 `resources: {}`，不自动创建 Registry；只有显式 `--resource KIND=PATH` 才创建空表；
 - 升级必须读取上次安装的精确 B 快照；快照缺失为 `BASE_UNKNOWN`，不得用远端 HEAD 代替；
 - 冲突、B 缺失、删除未授权时 fail closed；失败自动回滚并保留报告与备份；
-- 当前 `.agent/VERSION` 为 `3.0.0`；正式 `v3.1.0` Tag / Release / binary 资产由 P08 负责。
+- 当前 `.agent/VERSION` 为 `3.1.0`；源码版本标记不等于 Release 已发布。`v3.1.0` Tag、Release、校验和与四平台 binary 由仓库根 `scripts/release/` 的发布流程产生，当前 published 状态为 `NOT_RELEASED`。
 
-详细规范见 `specs/WorkflowAdoption.md`，工具与平台边界见 `adoption/README.md`。
+详细规范见 `specs/WorkflowAdoption.md`，工具与平台边界见 `adoption/README.md`，发布契约见根 `PACKAGE_MANIFEST.md`。
 
 ## Normal Flow
 

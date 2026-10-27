@@ -311,7 +311,13 @@ class DistributionContractTests(unittest.TestCase):
         self.assertEqual(inspected["commit"], self.commit)
 
     def test_manifest_does_not_claim_an_unpublished_release(self) -> None:
-        self.assertEqual((REPO / ".agent/VERSION").read_text(encoding="utf-8").strip(), "3.0.0")
+        # 版本必须来自 .agent/VERSION 且与分发包一致；具体版本号由发布任务推进，
+        # 这里只校验“不得声称已发布”的契约，不绑定某个字面版本。
+        version = (REPO / ".agent/VERSION").read_text(encoding="utf-8").strip()
+        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
+        self.assertEqual(self.dist["framework_version"], version)
+        self.assertEqual(self.dist["manifest"]["release"]["tag"], "")
+        self.assertEqual(self.dist["manifest"]["release"]["url"], "")
         for relative in (
             "README.md",
             "PACKAGE_MANIFEST.md",

@@ -1,11 +1,20 @@
-# Workflow V3.0.0 — Package Manifest
+# Workflow V3.1.0 — Package Manifest
 
 ## Workflow Version
 
-3.0.0
+3.1.0
 
-> 这是当前 `.agent/VERSION` 的内容版本。P07 不把开发基线冒充 `v3.1.0`；
-> 正式 `v3.1.0` Tag、CI 构建、校验和与 Release 资产由 P08 负责。
+> 这是当前 `.agent/VERSION` 的内容版本（Source Version）。
+>
+> | 字段 | 值 |
+> | --- | --- |
+> | Source Version | `3.1.0` |
+> | Source Commit | 真实完整 Git SHA（由发布构建从 `git rev-parse HEAD` 推导，不使用写死值） |
+> | Release Tag | 未来的 `v3.1.0`（本 Manifest 不预填、不声称已存在） |
+> | Published Status | `NOT_RELEASED` |
+>
+> 版本号与 Git Commit 是两个独立字段：版本号来自 `.agent/VERSION`，Commit 来自
+> Git 对象。P08-a 只做发布准备与候选集成，不创建正式 Tag / Release。
 
 ## Package Type
 
@@ -17,7 +26,7 @@ Source Distribution（源码分发包），由 `.agent/adoption/workflow-adoptio
 | 分类 | 内容 | 进入分发包 | 安装到宿主 |
 | --- | --- | --- | --- |
 | `managed` | `.agent/roles/**`、`.agent/specs/**`、`.agent/templates/**`、`.agent/engine/**`、`.agent/adoption/**`（`tests/` 除外）、`.agent/README.md`、`.agent/VERSION`、`.agent/bin/.gitignore` | 是 | 是；升级时参与 B/L/N |
-| `package_only` | 根 `README.md`、`PACKAGE_MANIFEST.md`、`.cnb.yml`、`docs/design/agent-workflow.md`、`.agent/adoption/tests/**` | 是 | 否；仅供阅读、发布校验与追溯 |
+| `package_only` | 根 `README.md`、`PACKAGE_MANIFEST.md`、`.cnb.yml`、`docs/design/agent-workflow.md`、`docs/releases/**`、`scripts/release/**`、`.agent/adoption/tests/**` | 是 | 否；仅供阅读、发布校验与追溯 |
 | `generated` | `.agent/workflow.yaml`、`.agent/upstream.yaml`、`.agent/bin/workflow-check` | 否 | 仅由成功的 install / upgrade 事务生成或更新 |
 | `protected` | 根 `AGENTS.md`、宿主 README / CI / Design、`.agent/workflow.yaml`、`.agent/tasks/**`、`.agent/registry/**`、业务文件、已有证据 | 否 | 永不覆盖或删除 |
 
@@ -34,6 +43,8 @@ Source Distribution（源码分发包），由 `.agent/adoption/workflow-adoptio
 - Adoption tooling（`.agent/adoption/`：分发、首装、升级、校验、恢复）
 - Bootstrap material（`.agent/README.md`、`.agent/VERSION`、`.agent/bin/.gitignore`）
 - Architecture Design（`docs/design/agent-workflow.md`，`package_only`）
+- Release Notes（`docs/releases/v3.1.0.md`，`package_only`）
+- Release engineering（`scripts/release/`：四平台构建、资产校验、promote 门槛与失败注入测试，`package_only`）
 - Root `README.md`、本 Manifest、`.cnb.yml`（`package_only`）
 
 ## Excluded
@@ -96,18 +107,29 @@ archive top-level: agent-workflow-src-<commit12>/
 
 | 项目 | 契约 |
 | --- | --- |
-| Source Distribution 内容 | 见 `Source Distribution Contract` 与 `MANIFEST.json` |
+| Source Distribution 内容 | 见 `Source Distribution Contract` 与包内 `MANIFEST.json` |
 | 绝不能打包 | 见 `Excluded` |
 | Release Binary 位置 | 宿主 `.agent/bin/workflow-check`（`0755`，被 `.agent/bin/.gitignore` 忽略） |
-| Binary 来源核验 | 必须与 `source.commit` 使用同一 Engine 源码构建；发布 SHA256；安装时传 `--workflow-check`、`--workflow-check-sha256`、`--workflow-check-commit` |
+| 发布 Binary 命名 | `workflow-check_3.1.0_<goos>_<goarch>[.exe]`；四个目标：`linux_amd64`、`linux_arm64`、`darwin_arm64`、`windows_amd64` |
+| Binary 构建参数 | `CGO_ENABLED=0`、`GOWORK=off`、`GOFLAGS=-mod=readonly`、`go build -trimpath -buildvcs=false -mod=readonly`；`-ldflags="-s -w -X main.version=<VERSION> -X main.commit=<HEAD> -X main.buildSource=release"` |
+| Binary 版本可核验 | `workflow-check version` / `version --json` 输出 framework_version、source_commit、build_source、go_version、platform；未注入版本时为 `dev` / `unknown` |
+| Binary 来源核验 | 必须与 `source.commit` 使用同一 Engine 源码构建；安装时传 `--workflow-check`、`--workflow-check-sha256`、`--workflow-check-commit` |
+| 校验和文件 | `SHA256SUMS`（`<sha>  <file>`，按文件名排序）；覆盖四平台 Binary、Source Distribution、Source Distribution 校验文件与 Release Notes |
+| 元数据文件 | `version.json`：Version、Tag、Source Commit、Go Toolchain、Build Flags、平台矩阵、每项资产 SHA256 与验证等级、Distribution Manifest 信息、`published_status=NOT_RELEASED` |
+| 哈希环规则 | `SHA256SUMS` 不覆盖自身与 `version.json`；`version.json` 记录 `SHA256SUMS` 摘要并自排除。清单可独立校验，无循环引用 |
+| 验证等级 | `runtime`：在构建环境真实执行 `version`（Linux x86-64）；`static`：仅交叉编译 + 文件类型 / 架构 / Go buildinfo 校验；`content`：成员与 SHA256 校验；`derived`：由其他资产推导 |
 | 安装来源记录 | 只由成功的 install / upgrade 事务写 `.agent/upstream.yaml`；`source.release` 在正式 Tag 前为空 |
 | 更新 upstream.yaml 的时机 | 安装成功且全部校验通过；升级无 CONFLICT / BASE_UNKNOWN / 未授权删除且写入后校验通过 |
-| Source Distribution 验证 | `workflow-adoption inspect --package <archive> --expected-sha256 <sha>` |
+| Source Distribution 验证 | `workflow-adoption inspect --package <archive> --expected-sha256 <sha>`；发布侧另用 `scripts/release/release.py verify-dist` 校验成员、MANIFEST 与七角色完整性 |
 | Host 最终状态验证 | `workflow-adoption verify --target <host>`；必须检查文件、binary、B 快照、真实 Gate 与历史 Evidence |
+| 发布顺序 | `tag_push` → 守卫 → 构建 + 校验 → pre-release（`preRelease=true, latest=false`）→ 上传附件 → 平台侧重新下载核对 → promote（`overlying=true`）→ 再核对 → `latest=true` |
+| 失败语义 | 任一阶段失败即非零退出，后续阶段不执行；未通过附件核对不得 promote，未通过 promote 后核对不得标记 latest，也不得声称 GA 完成 |
 | 发布责任 | P08 负责 `v3.1.0` Tag、CI 构建、校验和、Release 资产与正式版本标记 |
 
-本 Manifest 不引用尚不存在的 `v3.1.0` Release URL。P08 发布前不得把
+本 Manifest 不引用尚不存在的 `v3.1.0` Release URL。正式发布前不得把
 `release.tag` / `release.url` 填成非空值，也不得把开发 Commit 描述为 GA。
+Source Distribution 内的 `MANIFEST.json` 由 P07 工具生成，其
+`release.tag` / `release.url` 必须保持为空，构建校验会拒绝非空值。
 
 ## Engine Module
 
@@ -120,8 +142,27 @@ workflow-v2-engine
 ```bash
 GOWORK=off go -C .agent/engine test -count=1 ./...
 GOWORK=off go -C .agent/engine vet ./...
+GOWORK=off go -C .agent/engine build ./...
+GOWORK=off go -C .agent/engine test -race -count=1 ./...
 python3 .agent/adoption/tests/test_workflow_adoption.py -v
+python3 scripts/release/tests/test_release_scripts.py -v
 git diff --check
+```
+
+发布资产校验（在发布候选 Commit 上）：
+
+```bash
+# Tag / Annotated / Commit / VERSION 守卫
+python3 scripts/release/release.py guard --repo . --tag v3.1.0
+
+# 构建全部资产（输出目录必须是独立的顶层未跟踪目录）
+python3 scripts/release/release.py build --repo . --output dist --tag v3.1.0
+
+# 资产集合 / SHA256SUMS / Binary / Source Distribution 校验
+python3 scripts/release/release.py verify-assets --dir dist --report dist/reports/local-verification.json
+
+# 两次独立构建比较可复现性
+python3 scripts/release/release.py repro --repo . --tag v3.1.0
 ```
 
 安装 / 升级规范与 B/L/N 决策表见 `.agent/specs/WorkflowAdoption.md`。

@@ -705,7 +705,7 @@ git diff --check
 ```
 
 - `MANIFEST.json.source.commit` 必须等于 Owner 指定的完整 40 位 Commit；
-- `framework_version` 来自 `.agent/VERSION`；当前基线为 `3.0.0`，P08 才决定正式版本标记；
+- `framework_version` 来自 `.agent/VERSION`；当前源码版本为 `3.1.0`，正式 Tag 由发布流水线创建，源码版本标记不等于已发布；
 - `compatibility` 必须为 Config Schema 1、State Schema 2/3；
 - 归档成员必须与 Manifest 完全一致，且不含宿主数据。
 

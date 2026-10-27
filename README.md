@@ -1,23 +1,30 @@
 # 自研 Workflow V3：基于 Git 证据的多 Agent 工程协作框架
 
-这是一个面向 **AI 辅助软件开发** 的源码分发包：用六个独立角色会话完成需求拆解、设计、实现、审查、人工决策与交付验证；用 Git 提交和仓库内的任务文件保存跨会话事实；用独立的 Go 校验器判断能否进入下一阶段。
+这是一个面向 **AI 辅助软件开发** 的源码分发包：用独立角色会话完成需求拆解、设计、结构交付、实现、审查、人工决策与交付验证；用 Git 提交和仓库内的任务文件保存跨会话事实；用独立的 Go 校验器判断能否进入下一阶段。
+
+七个角色指 `NORMAL` / `COMPLEX` 路线的六个角色（TaskBuilder、Analyst、Coder、Cleaner、OwnerGate、Deliverer）加上 `ARCHITECT` 路线启用的 Architect。角色数量不是质量指标，路线决定实际启用的角色。
 
 项目关注的是 **Agent 写出的代码如何被审查、决策和交付**。它提供协作协议与只读校验器，不负责自动调用模型、调度 Agent 或替人合并代码。
 
 | 项目属性 | 当前实现 |
 | --- | --- |
 | 类型 | 可复制到其他 Git 仓库的源码包（source-vendored package） |
-| 核心组成 | 六角色协作规范、任务状态与证据文件、五个机器 Gate、Go 校验器、项目接入规范 |
-| 运行依赖 | Git；构建校验器需要 Go 1.23+ |
-| 版本 | Workflow V3.0.0；Go Module 名 `workflow-v2-engine` 是保留的历史标识 |
+| 核心组成 | 七角色协作规范、任务状态与证据文件、五个机器 Gate、Go 校验器、循环熔断（DANGER）协议、安装 / 升级工具 |
+| 运行依赖 | Git；构建校验器需要 Go 1.23+；安装 / 升级工具需要 Python 3.10+ |
+| 版本 | Workflow V3.1.0（源码版本 `3.1.0`）；Go Module 名 `workflow-v2-engine` 是保留的历史标识 |
+| 发布状态 | `NOT_RELEASED`：`v3.1.0` Tag 与正式 Release 尚未创建，本文不提供已可用的 Release 下载地址 |
 
 ## 为什么做这个项目
 
 在多轮 AI 辅助开发中，只靠聊天记录传递任务，容易出现三个问题：后续角色沿用过期上下文、实现者审查自己的代码、审查结论与后来变化的代码不再对应。项目把角色间的交接建立在 **Git 提交 + 仓库文件** 上，并在交接前检查实际仓库状态。
 
 ```text
+NORMAL / COMPLEX（六角色）
 TaskBuilder → Analyst → Coder → Cleaner → OwnerGate → Deliverer → 人类 Owner 集成
     任务       设计       实现      独立审查     人工决策记录     交付验证
+
+ARCHITECT（七角色，不经过 Cleaner）
+TaskBuilder → Analyst → Architect → OwnerGate（结构验证 → Owner 决策）→ Deliverer → 人类 Owner 集成
 ```
 
 每个角色使用独立会话，重新读取当前 Git 和任务文件。人类 Owner 保留关键设计接受、核心逻辑接受及最终分支集成的决定权。角色职责与可修改文件的边界见 [协作规范](.agent/specs/AgentCollaborationSpecification.md) 和 [职责边界](.agent/specs/Five-AgentResponsibilityBoundary.md)。
@@ -91,13 +98,15 @@ Workflow 专用入口是 [`.agent/specs/WorkflowAgentDirective.md`](.agent/specs
 ## 仓库结构
 
 ```text
-.agent/roles/             六个角色的操作说明
-.agent/specs/             Workflow 专用指令入口、协作、职责边界与安装/升级规范
+.agent/roles/             七个角色的操作说明
+.agent/specs/             Workflow 专用指令入口、协作、职责边界、循环熔断与安装/升级规范
 .agent/adoption/          Source Distribution 构建、首装、升级、校验与恢复工具
 .agent/engine/            独立 Go Module：workflow-check 及测试
 .agent/templates/         项目接入、机器配置、upstream 与 Registry 模板
 docs/design/              设计取舍与完整状态模型（package_only，不覆盖宿主）
-PACKAGE_MANIFEST.md       分发包包含/排除内容与 P08 发布契约
+docs/releases/            Release Notes（package_only，不覆盖宿主）
+scripts/release/          Release 构建、资产校验与 promote 门槛（package_only）
+PACKAGE_MANIFEST.md       分发包包含/排除内容与发布消费者契约
 ```
 
 Workflow Role 的入口是 `.agent/specs/WorkflowAgentDirective.md`，由角色 Prompt 显式读取，不依赖目录级自动发现。宿主根 `AGENTS.md` 由宿主维护，本包不创建、不覆盖。
@@ -118,14 +127,23 @@ python3 .agent/adoption/tests/test_workflow_adoption.py -v
 ```bash
 GOWORK=off go -C .agent/engine build -o ../bin/workflow-check ./cmd/workflow-check
 .agent/bin/workflow-check gate cleaner-start .agent/tasks/your-task-id
+
+# 二进制自身的版本 / Commit / 构建来源（不依赖宿主 .agent/workflow.yaml）
+.agent/bin/workflow-check version
+.agent/bin/workflow-check version --json
 ```
+
+本地直接 `go build` 出来的是开发构建：`version` 输出 `framework_version: dev`、`source_commit: unknown`、`build_source: dev`。正式资产的版本与 Commit 由发布构建通过确定的 ldflags 注入，不写死 SHA，也不嵌入构建时间。
 
 本仓库是分发包，**有意不包含**宿主项目的 live `.agent/workflow.yaml`、Registry 分配和任务数据；因此 Gate 示例需在完成 Adoption 的宿主仓库中运行。更完整的接入材料见 [包清单](PACKAGE_MANIFEST.md)、[运行时说明](.agent/README.md) 和 [架构设计](docs/design/agent-workflow.md)。
 
 ## 已知边界
 
 - Go 校验器有单元测试和基于临时 Git 仓库的集成测试；它校验可观察的仓库事实，不能证明 Agent 一定遵守 Prompt 中的所有职责约束。
+- 校验器**不验证 Agent 身份与 Session 独立性**：独立会话是协作约定，不是机器可验证事实。
+- 两轮循环熔断（DANGER）由角色 Prompt 与任务账本执行，**不是 Engine 硬限流**；Engine 只按白名单路径识别账本与 `danger-report.md`，不能证明轮次真实或 append-only。
 - 跨项目 Adoption 的完整真实项目试用尚未执行。当前仓库提供了接入规范、工具与临时宿主 E2E 测试，不应将其描述为已在多个真实项目完成验证。
 - 安装 / 升级工具的真实 E2E 仅在 Linux 临时 Git 仓库验证；macOS 与 Windows 原生环境未验证。Windows 使用 WSL2 / Linux 容器或按规范手工执行。
-- 校验器不执行 Git 写操作，也不自动运行六个角色；分支生命周期与最终集成由人类 Owner 控制。
-- 正式 `v3.1.0` Tag、Release、校验和与发布 binary 由 P08 产生；当前源码快照不是已发布 GA。
+- 发布 Binary 覆盖 Linux x86-64、Linux ARM64、macOS Apple Silicon、Windows x86-64 四个交叉编译目标；仅 Linux x86-64 在构建环境真实运行过，其余平台只经过交叉编译与静态检查（文件类型、架构、构建信息），不构成运行时保证。
+- 校验器不执行 Git 写操作，也不自动运行角色；分支生命周期与最终集成由人类 Owner 控制。
+- 正式 `v3.1.0` Tag、Release、校验和与发布 binary 由 P08 发布流程产生；当前源码快照是发布候选，不是已发布 GA，本文不提供尚不可用的 Release 下载地址。

@@ -77,6 +77,9 @@ PACKAGE_ONLY_FILES = {
 }
 PACKAGE_ONLY_PREFIXES = (
     ".agent/adoption/tests/",
+    # P08 发布工程材料：随包分发用于版本追溯与可复现构建，但不安装到宿主。
+    "scripts/release/",
+    "docs/releases/",
 )
 
 # Framework-owned content installed into the host and eligible for upgrade.

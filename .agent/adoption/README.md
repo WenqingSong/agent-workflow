@@ -157,5 +157,6 @@ python3 .agent/adoption/tests/test_workflow_adoption.py -v
 
 ## Version Boundary
 
-当前 `.agent/VERSION` 是 `3.0.0`。`v3.1.0` Tag、Release、正式 binary 资产与
-版本标记由 P08 负责；本目录不创建 Tag / Release，也不伪造正式发布地址。
+当前 `.agent/VERSION` 是 `3.1.0`（Source Version）。`v3.1.0` Tag、Release、四平台
+binary 资产、`SHA256SUMS` 与 `version.json` 由发布流水线产生，当前 Published Status
+为 `NOT_RELEASED`；本目录不创建 Tag / Release，也不伪造正式发布地址。
