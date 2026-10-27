@@ -20,6 +20,11 @@ Only remove this file after ADOPTION READY.
 - Date:
 - Current Branch:
 - Workflow Version:
+- Installation Mode: FIRST_INSTALL / UPGRADE
+- Source Distribution / Commit:
+- Distribution SHA256:
+- Existing `.agent/upstream.yaml`: YES / NO
+- B Snapshot Available (upgrade): YES / NO / NOT_APPLICABLE
 
 Adoption Status:
 
@@ -178,6 +183,24 @@ Workflow 指令入口是 `.agent/specs/WorkflowAgentDirective.md`；宿主根 `A
 - 接入前 NO → 接入后必须仍为 NO（不创建）；
 - 接入前 YES → 接入后 SHA256 必须与接入前一致；
 - 发现宿主根文件含旧 Workflow 内容时，只输出待迁移差异，不自行删除；清理或迁移需 Owner 明确授权。
+
+### 8.2 宿主保护对象基线
+
+安装 / 升级前后必须记录并比较；任何未授权差异都视为失败：
+
+| Protected Object | Before SHA256 | After SHA256 | Result |
+| --- | --- | --- | --- |
+| Root `README.md` | | | UNCHANGED / N/A |
+| Root `PACKAGE_MANIFEST.md` | | | UNCHANGED / N/A |
+| `.cnb.yml` / host CI | | | UNCHANGED / N/A |
+| `docs/design/**` | | | UNCHANGED / N/A |
+| `.agent/workflow.yaml` | | | UNCHANGED / CREATED_BY_INSTALL |
+| `.agent/tasks/**` | | | UNCHANGED |
+| `.agent/registry/**` | | | UNCHANGED / NOT_ENABLED |
+| Historical Evidence / blocked / DANGER | | | UNCHANGED |
+
+> Upgrade 报告中必须列出 B/L/N 决策与冲突；不得在存在 CONFLICT / BASE_UNKNOWN
+> 时声称升级成功。历史非法 Evidence 只报告并标记重新核验，不改写 state。
 
 ---
 

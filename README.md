@@ -58,15 +58,46 @@ Workflow 专用入口是 [`.agent/specs/WorkflowAgentDirective.md`](.agent/specs
 
 宿主根 `AGENTS.md` 属于宿主项目：存在时角色读取并遵守，不存在时不创建、不阻断。激活条件、缺失处理与退出规则只在上述 Directive 中维护，本 README 不复制。
 
+## 安装与升级
+
+本仓库是 Source Distribution 的构建源，也可以作为宿主仓库的安装 / 升级来源。首次安装与升级使用 `.agent/adoption/workflow-adoption`，默认 Dry-run，确认计划后才写入：
+
+```bash
+# 构建可校验的源码分发包（源仓库必须干净）
+.agent/adoption/workflow-adoption dist --source . --output dist/
+
+# 首次安装
+.agent/adoption/workflow-adoption install \
+  --target /path/to/host \
+  --package dist/agent-workflow-src-<commit12>.tar.gz \
+  --distribution-sha256 <sha256> \
+  --source-commit <full-40-hex> \
+  --integration-branch <owner-confirmed-branch> \
+  --owner <owner> --owner-authorized --execute
+
+# B/L/N 升级
+.agent/adoption/workflow-adoption upgrade \
+  --target /path/to/host \
+  --package /path/to/new-source.tar.gz \
+  --distribution-sha256 <sha256> \
+  --source-commit <new-full-40-hex> \
+  --owner <owner> --owner-authorized --execute
+```
+
+安装 / 升级不会创建或覆盖宿主根 `AGENTS.md`、根 README、CI、业务 Design、`.agent/workflow.yaml`、Tasks、Registry 与历史 Evidence。升级以 `.agent/upstream.yaml` 记录的精确 B 快照做三方比较；冲突、B 缺失或未授权删除时 fail closed。Registry 默认不创建，只有显式 `--resource KIND=PATH` 才创建空表。
+
+工具当前在 Linux 完成真实 E2E 验证；Windows 原生环境未验证，需使用 WSL2 / Linux 容器。正式 `v3.1.0` Tag、Release 与 binary 资产由 P08 负责，本仓库不提前标记 GA。
+
 ## 仓库结构
 
 ```text
 .agent/roles/             六个角色的操作说明
-.agent/specs/             Workflow 专用指令入口、协作、职责边界与项目接入规范
+.agent/specs/             Workflow 专用指令入口、协作、职责边界与安装/升级规范
+.agent/adoption/          Source Distribution 构建、首装、升级、校验与恢复工具
 .agent/engine/            独立 Go Module：workflow-check 及测试
-.agent/templates/         项目接入与配置模板
-docs/design/              设计取舍与完整状态模型
-PACKAGE_MANIFEST.md       分发包包含与排除的内容
+.agent/templates/         项目接入、机器配置、upstream 与 Registry 模板
+docs/design/              设计取舍与完整状态模型（package_only，不覆盖宿主）
+PACKAGE_MANIFEST.md       分发包包含/排除内容与 P08 发布契约
 ```
 
 Workflow Role 的入口是 `.agent/specs/WorkflowAgentDirective.md`，由角色 Prompt 显式读取，不依赖目录级自动发现。宿主根 `AGENTS.md` 由宿主维护，本包不创建、不覆盖。
@@ -76,9 +107,10 @@ Workflow Role 的入口是 `.agent/specs/WorkflowAgentDirective.md`，由角色 
 在本仓库根目录运行校验器的测试、静态检查与构建：
 
 ```bash
-GOWORK=off go -C .agent/engine test ./...
+GOWORK=off go -C .agent/engine test -count=1 ./...
 GOWORK=off go -C .agent/engine vet ./...
 GOWORK=off go -C .agent/engine build ./...
+python3 .agent/adoption/tests/test_workflow_adoption.py -v
 ```
 
 接入宿主项目后，可构建并运行一个具体任务的 Gate：
@@ -93,5 +125,7 @@ GOWORK=off go -C .agent/engine build -o ../bin/workflow-check ./cmd/workflow-che
 ## 已知边界
 
 - Go 校验器有单元测试和基于临时 Git 仓库的集成测试；它校验可观察的仓库事实，不能证明 Agent 一定遵守 Prompt 中的所有职责约束。
-- 跨项目 Adoption 的完整真实项目试用尚未执行。当前仓库提供了接入规范与模板，不应将其描述为已在多个项目完成验证。
+- 跨项目 Adoption 的完整真实项目试用尚未执行。当前仓库提供了接入规范、工具与临时宿主 E2E 测试，不应将其描述为已在多个真实项目完成验证。
+- 安装 / 升级工具的真实 E2E 仅在 Linux 临时 Git 仓库验证；macOS 与 Windows 原生环境未验证。Windows 使用 WSL2 / Linux 容器或按规范手工执行。
 - 校验器不执行 Git 写操作，也不自动运行六个角色；分支生命周期与最终集成由人类 Owner 控制。
+- 正式 `v3.1.0` Tag、Release、校验和与发布 binary 由 P08 产生；当前源码快照不是已发布 GA。
