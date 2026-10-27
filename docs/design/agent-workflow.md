@@ -494,7 +494,7 @@ Decision Checkpoint（`WAITING_FOR_OWNER_DECISION`）**不是 Handoff**。
 
 当前 Workflow V2 **不保留**一个名为 `WAITING_FOR_OWNER_ACTION` 的持久状态。
 
-Owner-only 动作（例如 Owner 创建 / 切换 feature branch）发生在**角色 Session 之外**：Owner 在流程开始前或角色交接间隙准备 branch。如果 Agent 在 Session 中发现需要 Owner 执行某个只有 Owner 有 Authority 的动作、且动作完成后原角色仍需继续工作，这属于**同 Session 内的一次 Owner Action 请求**——Agent 暂停等待，Owner 完成后原 Session 继续，不机械理解成 Role Handoff，也不持久化一个独立状态。
+Owner-only 动作（例如 Owner 创建 / 切换 feature branch；§3 的 `TB-BRANCH-1` 受控初始分支创建除外）发生在**角色 Session 之外**：Owner 在流程开始前或角色交接间隙准备 branch。如果 Agent 在 Session 中发现需要 Owner 执行某个只有 Owner 有 Authority 的动作、且动作完成后原角色仍需继续工作，这属于**同 Session 内的一次 Owner Action 请求**——Agent 暂停等待，Owner 完成后原 Session 继续，不机械理解成 Role Handoff，也不持久化一个独立状态。
 
 只有当前角色**真的无法继续**、且不能通过简单 Decision / Owner Action 恢复时，才进入 `blocked.active=true`（BLOCKED，见 §19）。
 
