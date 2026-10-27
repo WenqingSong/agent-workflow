@@ -202,6 +202,18 @@ Adoption 在 Owner Decision 确认后，必须生成 / 更新长期机器配置 
 
 `.agent/workflow.yaml` 是长期机器配置，**不是** temporary；`PROJECT_ADAPTATION.md` 仍是 temporary，完成后删除。
 
+#### 宿主根 `AGENTS.md` 保全
+
+Workflow 接入与升级**不得**把 Workflow 内部指令写入宿主根 `AGENTS.md`，也不得创建、覆盖、删除或清空该文件：
+
+- 宿主原本没有根 `AGENTS.md`：接入后仍然没有，**不创建**；
+- 宿主原本已有根 `AGENTS.md`：**保留原有内容**，接入前后文件 SHA256 必须一致；
+- 旧版本 Workflow 可能已把 `AGENTS.template.md` 的内容写入宿主根 `AGENTS.md`：先分析内容差异，只输出待迁移项（可迁移的 Workflow 指令应迁往 `.agent/specs/WorkflowAgentDirective.md`），**不得自行删除**宿主业务规则；
+- 对已有根文件的清理、改写或迁移必须取得 Owner 明确授权，并记录在 `PROJECT_ADAPTATION.md` 的宿主根 `AGENTS.md` 保全记录中；
+- 不得通过覆盖整个文件来完成升级。
+
+Workflow Role 在该文件存在时读取其中的宿主业务规范；不存在时不阻断、不补建。本次框架变更不对任何实际宿主项目执行迁移。
+
 ### 4.4 VERIFY
 
 必须验证迁移后的 Workflow 真正可以工作。
@@ -209,9 +221,12 @@ Adoption 在 Owner Decision 确认后，必须生成 / 更新长期机器配置 
 **Workflow structure**
 
 - 六角色 Prompt 存在
+- `.agent/specs/WorkflowAgentDirective.md` 存在，且六个 Role Prompt 都显式要求读取它
+- 不存在指向已删除模板 `AGENTS.template.md` 的有效入口
 - Workflow Design 存在
 - task/template 结构完整
 - Registry 状态合法
+- 宿主根 `AGENTS.md` 的存在性与 SHA256 与接入前一致（或差异已获 Owner 授权并记录）
 
 **Git model**
 
@@ -329,6 +344,7 @@ Adoption 必须逐项判断：
 - 不制作 tar.gz、不打包 Kit、不创建 dist；
 - 不执行当前 my-shop 的 live Adoption、不创建 live `PROJECT_ADAPTATION.md`；
 - 不新增第七 Agent；
+- 不创建、不覆盖、不删除、不清空宿主根 `AGENTS.md`，不把内部 Workflow 指令写入宿主业务规范（Owner 明确授权的一次性迁移除外）；
 - 不修改正常 Workflow state schema（不新增 Adoption 状态到 state.yaml）；
 - 不修改 INV-1 ~ INV-7、五个 Gate、Evidence Snapshot、Neutral Tail、Registry Authority；
 - 不修改业务代码、历史 Task Artifact、当前 live Registry。

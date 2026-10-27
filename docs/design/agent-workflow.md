@@ -10,7 +10,7 @@
 
 本文是 Workflow V3 的**唯一核心架构 Design 文档**：解释「为什么这样设计」「整个系统如何运行」「各概念之间的关系」「为什么需要这些 Gate / Git / Evidence 规则」。
 
-本文定位是「**为什么**」。`.agent/specs/*`（协作规范、职责边界）与 `.agent/roles/*`（六个角色 Prompt）负责「**具体怎么做**」，引用本文，不重复定义。
+本文定位是「**为什么**」。`.agent/specs/*`（Workflow Agent Directive、协作规范、职责边界）与 `.agent/roles/*`（六个角色 Prompt）负责「**具体怎么做**」，引用本文，不重复定义。
 
 事实源优先级：
 
@@ -660,7 +660,7 @@ Workflow 有三层事实：
 
 1. **Workflow Core**：Roles、Authority、Evidence Snapshot、Handoff、Gate、Completion Contract、Git safety model、Registry coordination concept——跨项目稳定，固化在 `.agent/engine/internal/workflow/*` 与 `.agent/specs/*`、`.agent/roles/*`。
 2. **Machine Configuration**：`.agent/workflow.yaml`——「跨项目会变化、且 Workflow Engine runtime 必须知道的最小参数」。
-3. **Project Policy**：README / Makefile / `docs/design/*` / `AGENTS.md` 等——项目工程约束，供 Agent 读取，不供 `workflow-check` 机器解析。
+3. **Project Policy**：README / Makefile / `docs/design/*` / 宿主根 `AGENTS.md` 等——项目工程约束（宿主所有，可选），供 Agent 读取，不供 `workflow-check` 机器解析。Workflow 专用指令入口不属于这一层，见 §30。
 
 `.agent/workflow.yaml` 是长期机器配置，**不是** `PROJECT_ADAPTATION.md`（一次性临时工作单）、不是 Task Artifact、不是业务配置。它在 Adoption 完成后长期存在，供 `workflow-check` 读取。
 
@@ -706,6 +706,37 @@ reservation row（Value / Owner / Status）
 ```
 
 `migration_version` / `error_code_domain` 只是当前 my-shop Project Config 声明的 resource kind，不是 Workflow Core builtin type。未来新增 `im_migration_version`、`nats_subject` 等 kind 只改 `.agent/workflow.yaml`，无需修改 Validator Core。
+
+---
+
+## 30. Agent Directive 隔离（V3.1）
+
+V3.0.0 及更早版本把 Workflow 入口放在仓库根 `AGENTS.template.md`，Adoption 时落到宿主根 `AGENTS.md`。这带来三个问题：
+
+1. **规则污染**：Workflow 内部流程进入宿主业务规范文件，普通 Agent 读取根规则时被动继承 Gate、Git 白名单与 Handoff 契约；
+2. **升级冲突**：入口模板与宿主业务规则共用同一文件，升级只能整文件覆盖，容易破坏宿主内容；
+3. **归属不清**：宿主根 `AGENTS.md` 是宿主资产，Workflow 不应拥有写入权。
+
+V3.1 的隔离方式：
+
+| 关注点 | 位置 | 归属 |
+| --- | --- | --- |
+| Workflow 角色指令、激活与防逃逸 | `.agent/specs/WorkflowAgentDirective.md` | Workflow |
+| 协作协议、职责边界 | `.agent/specs/*` | Workflow |
+| 宿主业务规范 | 宿主根 `AGENTS.md` | 宿主（可选，只读） |
+| Git / Gate / Registry 机器事实 | `.agent/engine/` 读取 Git 与 `.agent/workflow.yaml` | Workflow Core |
+
+设计取舍：
+
+- 入口不使用 `AGENTS.md` 命名，降低目录级自动发现带来的规则污染风险；但**不宣称**任何平台的自动发现行为，Role 必须显式读取。
+- 激活判定（角色指定 + Task 指定 + 以该角色职责运行）是 Agent 行为协议，不是 Engine 的 Session 身份认证；Engine 无法验证 Session 是否真的按角色运行。
+- 显式加载与非 `AGENTS.md` 命名只降低风险，不构成绝对不可绕过的隔离保证；防逃逸仍依赖 Role 遵守 Prompt。
+- 普通 Session 不继承 Workflow 约束，因此在 Owner 授权与宿主安全策略允许时可以正常开发、Commit 与 Push；Workflow 不改变平台权限或分支保护。
+- 已激活 Role 不得自述退出；退出需 Owner 明确指令。
+
+Engine 影响：**无**。`workflow-check` 不读取任何角色 Markdown 或 Directive，因此本隔离不改变 CLI、Gate、State、Config 与 Registry 行为。
+
+精确的激活条件、缺失处理与退出规则只在 `.agent/specs/WorkflowAgentDirective.md` 维护，本文不复制。
 
 ---
 

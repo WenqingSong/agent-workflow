@@ -12,14 +12,18 @@
 
 ## Entry
 
-仓库 Agent 入口：`../AGENTS.md`
+Workflow 专用指令入口：`specs/WorkflowAgentDirective.md`
+
+- 只适用于被明确激活的 Workflow Role Session；普通 Agent 不自动加载，也不被套用 Workflow 的 Git 白名单、Gate 与 Handoff 约束。
+- 角色必须显式读取；缺失或不可读时输出 `BLOCKED`，不得凭记忆继续。
+- 宿主根 `AGENTS.md` 是宿主项目的业务规范，可选：存在时角色读取并遵守，不存在时不创建、不阻断。
 
 架构 Design：`../docs/design/agent-workflow.md`
 
 ## Structure
 
 - `roles/` — 六个独立 Agent Role Prompt
-- `specs/` — 协作协议、Authority / Responsibility Boundary、Project Adoption
+- `specs/` — Workflow Agent Directive（Workflow 专用入口）、协作协议、Authority / Responsibility Boundary、Project Adoption
 - `templates/` — Workflow / Adoption 临时模板
 - `workflow.yaml` — Workflow Engine machine configuration
 - `registry/` — shared resource registries

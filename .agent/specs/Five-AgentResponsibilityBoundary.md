@@ -18,6 +18,8 @@ Owner 不是第七个 Agent，而是整个 Workflow 的 **Decision Authority + S
 
 共享流程、状态和文件规则见 `.agent/specs/AgentCollaborationSpecification.md`。各角色 Prompt 只说明本角色怎样工作，不重复整套工程制度。
 
+本文件描述的角色边界、Gate 与 Handoff 约束只适用于按 `.agent/specs/WorkflowAgentDirective.md` §2 明确激活的 Workflow Role Session。普通 Agent Session 不因本文件存在而自动获得 Workflow Role 职责，也不自动受其 Git、Gate 与 Artifact 约束。
+
 Workflow V2 状态模型（`state.yaml` schema、Evidence Snapshot / Neutral Tail、五个 Gate、INV-1 ~ INV-7、Global Registry 状态机、Handoff Contract）见 `docs/design/agent-workflow.md`。当前状态唯一机器权威源是 `.agent/tasks/<task-slug>/state.yaml`。
 
 ## 2. Owner

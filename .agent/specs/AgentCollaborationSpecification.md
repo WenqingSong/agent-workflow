@@ -4,11 +4,21 @@
 
 Agent 用来扩大实现、测试和审查能力；Owner 决定需求、关键方案和最终是否接受，并掌握重要业务逻辑。
 
-本文件只规定跨角色协作。长期工程规则见仓库根目录 `AGENTS.md`，角色边界见 `.agent/specs/Five-AgentResponsibilityBoundary.md`，当前需求以 `.agent/tasks/<task-slug>/task.md` 为准，状态模型见 `docs/design/agent-workflow.md`。
+本文件只规定跨角色协作。Workflow 专用指令入口是 `.agent/specs/WorkflowAgentDirective.md`；宿主业务规范位于宿主根 `AGENTS.md`（存在时读取，不存在时不阻断）。角色边界见 `.agent/specs/Five-AgentResponsibilityBoundary.md`，当前需求以 `.agent/tasks/<task-slug>/task.md` 为准，状态模型见 `docs/design/agent-workflow.md`。
 
 角色数量不是质量指标。只启用能为当前任务增加明确价值的角色。
 
-正常六角色运行只依赖 Git + Artifacts + `AGENTS.md` + `.agent/specs/*` + `.agent/roles/*` + `docs/design/*`，不依赖临时文件 `PROJECT_ADAPTATION.md`。`PROJECT_ADAPTATION.md` 只存在于 Workflow V2 首次迁移 / Adoption 到一个项目的过程中，Adoption 完成后即删除，见 `.agent/specs/WorkflowAdoption.md`。
+正常六角色运行只依赖 Git + Artifacts + `.agent/specs/WorkflowAgentDirective.md` + `.agent/specs/*` + `.agent/roles/*` + `docs/design/*`，不依赖临时文件 `PROJECT_ADAPTATION.md`。`PROJECT_ADAPTATION.md` 只存在于 Workflow V2 首次迁移 / Adoption 到一个项目的过程中，Adoption 完成后即删除，见 `.agent/specs/WorkflowAdoption.md`。
+
+### 1.1 适用范围
+
+本规范、§6 的 Gate 前置条件、§11 的 Git 操作白名单与禁止事项、各角色的 Task Artifact 状态写入职责，以及 Session Handoff 契约，**只约束被明确激活的 Workflow Role Session**。激活条件（角色指定、Task 指定、以该角色职责运行）只在 `.agent/specs/WorkflowAgentDirective.md` §2 维护，本文件不复制。
+
+- 未按该 Directive 激活的 **普通 Agent Session** 不自动成为 Workflow Role，也不自动受上述 Git 白名单、Gate 前置条件、Artifact 写入职责和 Handoff 契约约束；
+- 普通 Agent 在 Owner 明确授权、且宿主自身安全策略允许时，可以进行正常代码开发、Commit 和 Push；这不表示可以绕过平台权限、服务器分支保护或宿主工程规范；
+- 本文件不是仓库级 Git 规则，不改变宿主项目的分支保护、CI 与平台权限。
+
+反过来，本节的隔离不放松任何已激活 Workflow Role 的现有权限：各角色的 Git 操作白名单与禁止事项保持原样。
 
 ## 2. 指令与事实来源
 
@@ -17,8 +27,8 @@ Agent 用来扩大实现、测试和审查能力；Owner 决定需求、关键�
 1. Owner 当前明确指令；
 2. 当前任务的 Goal、Scope、Out of Scope 和 Acceptance Criteria；
 3. Owner 已确认的 `contract.md` 与 `docs/design/*` 中的项目级长期设计；
-4. `AGENTS.md`；
-5. 本规范、职责边界和角色 Prompt。
+4. 宿主根 `AGENTS.md` 中的宿主业务规范（存在时；它不是 Workflow 指令入口）；
+5. `.agent/specs/WorkflowAgentDirective.md`、本规范、职责边界和角色 Prompt（仅在 Workflow Role 已激活时生效）。
 
 代码、测试、日志和运行结果用于判断当前事实，不能自行改变任务目标。发现冲突时说明证据和需要 Owner 决定的事项，不暗自选边。
 
@@ -153,6 +163,8 @@ Cleaner 审查测试可信度，在 `core-logic.md` 整理核心验证卡；Owne
 详细证据应写入对应任务文件、测试或 Git Diff。聊天交接用于帮助 Owner 快速判断，而不是复制所有过程记录。
 
 ## 11. Git 权限与最终决定
+
+本节只适用于已激活的 Workflow Role Session（范围见 §1.1），不构成对宿主其他 Agent 或仓库级 Git 操作的通用规则；也不改变 Workflow Role 现有权限。
 
 - Agent 允许：`fetch / status / diff / log / show / rev-parse`、`switch` 到已存在且属于当前任务的分支、`pull --ff-only` 当前 feature。
 - Agent 禁止：创建/删除/重命名 branch、merge feature→develop、`push --force`、`reset --hard`、`clean -fd`、`git add -A` / `git add .`、rebase 已发布历史、`commit --amend`、rewrite history。`push develop` 默认禁止——唯一例外是 Analyst 的 Registry-only develop commit（仅 `.agent/workflow.yaml` 已声明的 Registry 文件，见 §12.2）。
