@@ -13,8 +13,10 @@ import (
 // shared develop 的机器级保护由外部 branch protection 承担。
 type Git interface {
 	// DiffNameOnly 返回 base 到工作区（含已提交与未提交、不含未跟踪文件）的变更相对路径。
+	// 禁用 rename detection：rename 会被折叠为单一目标路径，可能把实质变更伪装成 Neutral Artifact。
 	DiffNameOnly(base string) ([]string, error)
 	// DiffNameOnlyRange 返回 from..to 已提交区间内变更的相对路径。
+	// 同样禁用 rename detection，rename 会拆成「源路径删除 + 目标路径新增」两条独立记录。
 	DiffNameOnlyRange(from, to string) ([]string, error)
 	// UntrackedFiles 返回工作区未跟踪文件（相对路径，已排除 .gitignore）。
 	UntrackedFiles() ([]string, error)
@@ -54,8 +56,21 @@ func (g *ExecGit) run(args ...string) (string, error) {
 	return string(out), nil
 }
 
+// diffNoRenames 是 review / delivery tail 判定必须使用的 diff 选项。
+//
+// Git 默认开启 rename detection，会把 «src/keep.go → .agent/tasks/<t>/findings.md» 折叠成
+// 一条目标路径记录，导致生产代码被移走却在 tail 中「不可见」，
+// 从而错误满足 Neutral 白名单（默认允许）而放过实质变更。
+// 禁用 rename detection 后，同一次 rename 会同时暴露源路径与目标路径，
+// 由 default-deny 的 substantive 判定分别处理两个方向：
+//   - substantive → neutral：源路径 .go 判 substantive，拒绝；
+//   - neutral → substantive：目标路径判 substantive，拒绝。
+//
+// 这对「正常 Git Diff 语义」没有破坏：变更路径集合只会更完整，不会漏报。
+const diffNoRenames = "--no-renames"
+
 func (g *ExecGit) DiffNameOnly(base string) ([]string, error) {
-	out, err := g.run("diff", "--name-only", base)
+	out, err := g.run("diff", diffNoRenames, "--name-only", base)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +78,7 @@ func (g *ExecGit) DiffNameOnly(base string) ([]string, error) {
 }
 
 func (g *ExecGit) DiffNameOnlyRange(from, to string) ([]string, error) {
-	out, err := g.run("diff", "--name-only", from+".."+to)
+	out, err := g.run("diff", diffNoRenames, "--name-only", from+".."+to)
 	if err != nil {
 		return nil, err
 	}

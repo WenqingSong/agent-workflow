@@ -26,6 +26,17 @@ func TestWhitelistTaskScoped(t *testing.T) {
 		{"task.md", "demo", ".agent/tasks/demo/task.md", false, false},
 		{"Design 同名 state.yaml", "demo", "docs/design/state.yaml", false, false},
 		{"Registry 同名", "demo", ".agent/registry/state.yaml", false, false},
+		// DANGER 循环证据文件：仅当前 task 目录下精确文件名豁免。
+		{"本 task loop-ledger.md", "demo", ".agent/tasks/demo/loop-ledger.md", true, true},
+		{"本 task danger-report.md", "demo", ".agent/tasks/demo/danger-report.md", true, true},
+		{"其他 task loop-ledger.md", "demo", ".agent/tasks/other/loop-ledger.md", false, false},
+		{"其他 task danger-report.md", "demo", ".agent/tasks/other/danger-report.md", false, false},
+		{"本 task 子目录 loop-ledger.md", "demo", ".agent/tasks/demo/sub/loop-ledger.md", false, false},
+		{"本 task 子目录 danger-report.md", "demo", ".agent/tasks/demo/sub/danger-report.md", false, false},
+		{"近似文件名 loop-ledger-old.md", "demo", ".agent/tasks/demo/loop-ledger-old.md", false, false},
+		{"大小写近似 LOOP-LEDGER.md", "demo", ".agent/tasks/demo/LOOP-LEDGER.md", false, false},
+		{"生产 SQL", "demo", "db/V1__baseline.sql", false, false},
+		{"Design 文档", "demo", "docs/design/foo.md", false, false},
 	}
 
 	for _, tt := range tests {
