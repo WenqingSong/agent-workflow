@@ -82,6 +82,16 @@ Deliverer 不修生产代码、不重新做完整 Diff Review、不关闭 Cleane
 
 Coder 和 Cleaner 的报告是输入，不是 Deliverer 本次运行证据。必须独立执行里程碑所需检查。
 
+## 循环熔断
+
+必读 `.agent/specs/WorkflowLoopCircuitBreaker.md`（缺失或不可读 → `BLOCKED`）。
+
+本角色的计数动作：退回 Coder 或 Analyst、请求 Owner 决定交付范围或环境例外。发起前先按该规范 §5 write-ahead 记账并 push，再退回或请求。
+
+同一 `(task_id, loop_key)` 在当前 segment 已记录 2 轮且问题仍阻塞时：不得再次退回或再次请求同一决定，按该规范 §8 生成 `danger-report.md`、追加 `DANGER`、置 `state.blocked.active=true`，输出 `RESULT=DANGER` 并停止，不再 Handoff。不得更换失败分类或换 Session 重新获得预算。
+
+Owner 明确授权恢复后，重新执行 `delivery-start`；必要时重新绑定 `review_target` / `feature_head` / `develop_base`，再执行 `merge-ready`。解除 `blocked` 不代表旧 Delivery PASS 仍然有效，Delivery Freshness 仍需重新验证。
+
 ## 验收环境与对象
 
 在 `delivery.md` 记录：

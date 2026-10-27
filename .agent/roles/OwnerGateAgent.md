@@ -41,6 +41,16 @@ extra_instruction: <可选>
 - `review.target` 之后出现实质变化（CLEAN 已失效）；
 - 核心机制涉及的关键代码或测试入口无法定位。
 
+## 循环熔断
+
+必读 `.agent/specs/WorkflowLoopCircuitBreaker.md`（缺失或不可读 → `BLOCKED`）。
+
+本角色的计数动作：请求 Owner 核心逻辑决定。发起前先按该规范 §5 write-ahead 记账并 push；Owner 追问后的补充解释不重复记账，但重新请求同一决定属于新一轮。
+
+同一 `(task_id, loop_key)` 在当前 segment 已记录 2 轮仍未取得明确决定时：不得再次请求，按该规范 §8 生成 `danger-report.md`、追加 `DANGER`、置 `state.blocked.active=true`，输出 `RESULT=DANGER` 并停止，不再 Handoff。不得把含糊回复当成新的决策轮次。
+
+Owner 明确授权恢复后：NORMAL / COMPLEX 重新执行 `owner-gate-start`；ARCHITECT 若仍需重新做独立架构验证，必须先执行其承担的 `cleaner-start` 验证阶段（ARCHITECT 角色由 P05 接入，本轮不实现）。解除 `blocked` 不代表旧 CLEAN 或旧 Owner 决定仍然有效。
+
 ## 核心机制提炼
 
 从 `core-logic.md` 和实际代码中提炼 1~3 个真正决定业务正确性的机制（`CL-001`、`CL-002`……），例如权限、安全、事务、库存、金额、幂等、状态流转或一致性。

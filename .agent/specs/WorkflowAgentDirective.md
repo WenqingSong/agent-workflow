@@ -43,15 +43,21 @@ Role 开始工作前，必须按顺序**显式读取**：
 1. 本文件 `.agent/specs/WorkflowAgentDirective.md`；
 2. 自身角色 Prompt：`.agent/roles/<Role>.md`；
 3. `.agent/specs/AgentCollaborationSpecification.md`（协作规范）与 `.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）；
-4. 当前 Task 事实：`.agent/tasks/<task-slug>/` 下的 `task.md`、`state.yaml`、`contract.md` 等；
-5. 宿主根 `AGENTS.md`：**存在时读取并遵守**其中的宿主业务规范；**不存在时继续**，不创建、不阻断。
+4. `.agent/specs/WorkflowLoopCircuitBreaker.md`（循环熔断：两轮预算、账本、DANGER 停机与 Owner 恢复）；
+5. 当前 Task 事实：`.agent/tasks/<task-slug>/` 下的 `task.md`、`state.yaml`、`contract.md`、`loop-ledger.md`、`danger-report.md` 等；
+6. 宿主根 `AGENTS.md`：**存在时读取并遵守**其中的宿主业务规范；**不存在时继续**，不创建、不阻断。
 
 不得依据旧路径 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。
+
+**全部已激活的 Workflow Role（包括 TaskBuilder）都必须读取第 4 项。** TaskBuilder 的 DANGER 约束经由本 Directive 间接加载，其角色 Prompt 不重复定义熔断计数。
+
+循环熔断规范是 **Agent 行为协议**：`workflow-check` 不解析账本，无法证明 append-only、无法计算机轮次。不要把它描述为机器级限流；它唯一的机器事实支撑是 `blocked.active=true` 时五个 Gate 一律拒绝，以及两个证据文件在当前 Task 根目录内属于 Neutral Tail。
 
 ## 5. 缺失与不可读
 
 - 本文件缺失或不可读 → 立即输出 `BLOCKED`，报告缺少 `.agent/specs/WorkflowAgentDirective.md`；**不得**凭记忆、旧模板副本、历史任务或聊天上下文继续执行 Workflow Role。
 - 自身角色 Prompt 缺失 → 同样 `BLOCKED`。
+- `.agent/specs/WorkflowLoopCircuitBreaker.md` 缺失或不可读 → 同样 `BLOCKED`；**不得**在缺失时开展需要熔断治理的 Workflow 操作，包括请求 Owner 决定、跨角色退回、Contract 修订、DANGER 判定与恢复。不得凭记忆重建轮次。
 - 宿主根 `AGENTS.md` 缺失 → 不阻断；它只是可选的宿主业务规范。
 - 本文件与角色 Prompt 冲突时 → `BLOCKED` 并说明冲突点，由 Owner 决定，不自行选择更宽松的一方。
 
@@ -89,6 +95,7 @@ Role 认为继续执行会违反自身职责或安全约束时，输出 `BLOCKED
 | 本 Directive（Workflow 专用入口） | `.agent/specs/WorkflowAgentDirective.md` |
 | 协作规范 | `.agent/specs/AgentCollaborationSpecification.md` |
 | 职责边界 | `.agent/specs/Five-AgentResponsibilityBoundary.md` |
+| 循环熔断（两轮预算 / 账本 / DANGER / Owner 恢复） | `.agent/specs/WorkflowLoopCircuitBreaker.md` |
 | 首次跨项目 Adoption | `.agent/specs/WorkflowAdoption.md` + `.agent/templates/PROJECT_ADAPTATION.template.md` |
 | 角色 Prompt | `.agent/roles/*.md` |
 | 机器配置 | `.agent/workflow.yaml` |

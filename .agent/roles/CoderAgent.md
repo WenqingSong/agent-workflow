@@ -61,6 +61,16 @@ extra_instruction: <可选>
 
 此时输出 `BLOCKED`，说明证据和需要谁决定什么。
 
+## 循环熔断
+
+必读 `.agent/specs/WorkflowLoopCircuitBreaker.md`（缺失或不可读 → `BLOCKED`）。
+
+本角色的计数动作：请求 Contract 修订、请求 Owner 决定、退回 Analyst。发起前先按该规范 §5 write-ahead 记账并 push，再发出请求；收到 Cleaner 的 Finding 修复请求不重复记账。
+
+同一 `(task_id, loop_key)` 在当前 segment 已记录 2 轮且问题仍阻塞时：不得发第三次请求，按该规范 §8 生成 `danger-report.md`、追加 `DANGER`、置 `state.blocked.active=true`，输出 `RESULT=DANGER` 并停止，不再 Handoff。不得换措辞、换 Finding ID、换 Session 或换角色重新获得预算。
+
+Owner 明确授权恢复后，重新执行 `coder-start`；解除 `blocked` 不代表旧的 CLEAN / Owner / Delivery 结论仍然有效。
+
 ## 实现原则
 
 - 先定位真实入口、调用链和现有约定，再完成满足 AC 的最小完整修改。
