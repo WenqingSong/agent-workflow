@@ -553,6 +553,8 @@ git add -A / git add .
 
 Analyst 的 Registry-only develop exception 单独按 §4 Registry Authority 规则处理。
 
+TaskBuilder 的受控初始分支创建（`TB-BRANCH-1`）单独按 §3 与 `.agent/roles/TaskBuilderPrompt.md` 处理：仅限 Owner 逐项授权的**当前任务初始** Feature Branch，不构成通用创建分支权限，也不改变本节其余允许 / 禁止项。
+
 ---
 
 ## 22. Git 当前事实优先
