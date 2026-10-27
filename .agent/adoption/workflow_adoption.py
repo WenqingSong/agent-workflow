@@ -1570,6 +1570,25 @@ EVIDENCE_LINE = re.compile(
 )
 
 
+def resolve_evidence_commit(target: Path, literal: str) -> str | None:
+    """按 Engine E-2 语义把十六进制字面值解析为唯一真实 Commit。
+
+    与 `.agent/engine` 的 `resolveImmutableCommit` 对齐：字面值必须存在、能解析为
+    Commit、且是解析结果的前缀。无法满足任一条（不存在 / 有歧义 / 指向非 Commit
+    对象 / 十六进制样式的分支名）时返回 None，由调用方 fail closed。
+    """
+    try:
+        git(target, "cat-file", "-e", f"{literal}^{{commit}}")
+        full = git(target, "rev-parse", "--verify", f"{literal}^{{commit}}")
+    except AdoptionError:
+        return None
+    if not FULL_SHA.match(full):
+        return None
+    if not full.lower().startswith(literal.lower()):
+        return None
+    return full
+
+
 def scan_legacy_evidence(target: Path) -> tuple[list[dict[str, str]], list[str]]:
     tasks_root = target / ".agent/tasks"
     findings: list[dict[str, str]] = []
@@ -1605,18 +1624,44 @@ def scan_legacy_evidence(target: Path) -> tuple[list[dict[str, str]], list[str]]
             if not value:
                 continue
             if FULL_SHA.match(value):
-                continue
-            if SHORT_SHA.match(value):
+                if resolve_evidence_commit(target, value):
+                    continue
                 findings.append(
                     {
                         "task": task,
                         "field": field,
                         "value": value,
-                        "class": "legacy_short_sha",
-                        "action": "accepted by Engine; write full 40-hex SHA on next valid evidence write",
-                        "reason": "历史短 SHA 可解析，但不得作为新证据写入形态",
+                        "class": "invalid_commit_sha",
+                        "action": "keep original evidence; task requires re-verification through role/Owner flow",
+                        "reason": "完整 40 位十六进制字面值在本仓库中不是真实 Commit",
                     }
                 )
+                reverify.add(task)
+                continue
+            if SHORT_SHA.match(value):
+                if resolve_evidence_commit(target, value):
+                    findings.append(
+                        {
+                            "task": task,
+                            "field": field,
+                            "value": value,
+                            "class": "legacy_short_sha",
+                            "action": "accepted by Engine; write full 40-hex SHA on next valid evidence write",
+                            "reason": "历史短 SHA 可解析为唯一真实 Commit，但不得作为新证据写入形态",
+                        }
+                    )
+                    continue
+                findings.append(
+                    {
+                        "task": task,
+                        "field": field,
+                        "value": value,
+                        "class": "invalid_commit_sha",
+                        "action": "keep original evidence; task requires re-verification through role/Owner flow",
+                        "reason": "短 SHA 无法唯一解析为真实 Commit（不存在 / 有歧义 / 非 Commit 对象）",
+                    }
+                )
+                reverify.add(task)
                 continue
             findings.append(
                 {

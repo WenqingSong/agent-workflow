@@ -265,6 +265,7 @@ P02 已建立新 Evidence 写入完整 40 位 SHA 的规则。Engine 允许合�
 - 分支名；
 - 可移动 Tag；
 - `origin/*`；
+- 十六进制字面值但不存在、有歧义或指向非 Commit 对象；
 - 其他非合法 Commit SHA 字面形式。
 
 这是有意的安全收紧，不是兼容性回归。
@@ -283,6 +284,7 @@ P02 已建立新 Evidence 写入完整 40 位 SHA 的规则。Engine 允许合�
 | --- | --- | --- |
 | 完整 40 位十六进制 SHA | 接受 | 无需处理 |
 | 7～39 位十六进制短 SHA | 接受并解析为完整 SHA | 报告 `legacy_short_sha`；新写入必须用完整 SHA；不自动改写 |
+| 十六进制字面值但不存在 / 有歧义 / 指向非 Commit 对象 | 拒绝（无法唯一解析为真实 Commit） | 报告 `invalid_commit_sha`；Task 标记重新核验；保留原证据 |
 | `HEAD` / `HEAD~1` | 拒绝 | 报告 `invalid_immutable_ref`；Task 标记重新核验；保留原证据 |
 | 分支名 | 拒绝 | 同上 |
 | 可移动 Tag | 拒绝 | 同上 |

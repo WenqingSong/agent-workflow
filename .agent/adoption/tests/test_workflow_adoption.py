@@ -669,11 +669,13 @@ class UpgradeE2ETests(unittest.TestCase):
     def test_upgrade_preserves_tasks_registry_blocked_evidence_and_reports_f03(self) -> None:
         task_dir = self.host / ".agent/tasks/legacy"
         task_dir.mkdir(parents=True)
-        state = """schema_version: 2
+        # 合法历史短 SHA：必须是本仓库真实且无歧义解析的 7 位 Commit 前缀。
+        legacy_short = git(self.host, "rev-parse", "HEAD")[:7]
+        state = f"""schema_version: 2
 task_id: legacy
 contract:
   status: NOT_REQUIRED
-  target: "deadbee"
+  target: "{legacy_short}"
 resources:
   migrations:
     - "20261001000001"
@@ -843,6 +845,70 @@ blocked:
         self.assertEqual(restored["status"], "RESTORED")
         self.assertEqual(self.spec.read_bytes(), self.base_spec)
         self.assertEqual(upstream_commit(self.host), self.base_commit)
+
+
+class LegacyEvidenceClassificationTests(unittest.TestCase):
+    """F-03 分类必须与 Engine E-2 的解析语义一致。
+
+    合法短 SHA 只是「历史非规范写入」，Engine 仍能解析，不得升级为必须重新审查；
+    不存在 / 有歧义 / 非 Commit 的十六进制字面值则不是合法 Evidence。
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="adoption-legacy-class-test-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.source = self.tmp / "source"
+        self.commit = copy_source(self.source)
+        self.host = make_host(self.tmp / "host")
+
+    def _write_state(self, task: str, value: str) -> None:
+        write(
+            self.host / f".agent/tasks/{task}/state.yaml",
+            f'schema_version: 3\ntask_id: {task}\ncontract:\n  status: NOT_REQUIRED\n  target: "{value}"\n',
+        )
+
+    def test_scan_uses_real_commit_resolution(self) -> None:
+        proc, report = install(self.host, source=self.source, source_commit=self.commit)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(report["status"], "INSTALLED")
+
+        commit = commit_all(self.host, "evidence fixture base")
+        blob = git(self.host, "rev-parse", "HEAD:README.md")
+        git(self.host, "tag", "v-legacy-fixture", commit)
+
+        cases = {
+            "full40": commit,
+            "short7": commit[:7],
+            "short12": commit[:12],
+            "headref": "HEAD",
+            "branchref": "main",
+            "tagref": "v-legacy-fixture",
+            "originref": "origin/main",
+            "missing": "0" * 7,
+            "noncommit": blob[:7],
+        }
+        for task, value in cases.items():
+            self._write_state(task, value)
+        commit_all(self.host, "evidence fixture")
+
+        proc, data = verify(self.host)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        classes = {
+            (item["task"], item["field"]): item["class"] for item in data["legacy_evidence"]
+        }
+        self.assertNotIn(("full40", "target"), classes)
+        self.assertEqual(classes[("short7", "target")], "legacy_short_sha")
+        self.assertEqual(classes[("short12", "target")], "legacy_short_sha")
+        for task in ("headref", "branchref", "tagref", "originref"):
+            self.assertEqual(classes[(task, "target")], "invalid_immutable_ref", task)
+        for task in ("missing", "noncommit"):
+            self.assertEqual(classes[(task, "target")], "invalid_commit_sha", task)
+
+        reverify = set(data["task_reverification_required"])
+        self.assertEqual(
+            reverify,
+            {"headref", "branchref", "tagref", "originref", "missing", "noncommit"},
+        )
 
 
 class PackageInstallTests(unittest.TestCase):
