@@ -6,6 +6,8 @@ Agent 用来扩大实现、测试和审查能力；Owner 决定需求、关键�
 
 本文件只规定跨角色协作。Workflow 专用指令入口是 `.agent/specs/WorkflowAgentDirective.md`；宿主业务规范位于宿主根 `AGENTS.md`（存在时读取，不存在时不阻断）。角色边界见 `.agent/specs/Five-AgentResponsibilityBoundary.md`，当前需求以 `.agent/tasks/<task-slug>/task.md` 为准，状态模型见 `docs/design/agent-workflow.md`。
 
+Git 的 Stage / Commit / Push / Gate / HANDOFF 时机与七角色例外矩阵以 `.agent/specs/WorkflowGitLifecycle.md` 为准；跨 Session HANDOFF 的最小字段与格式以 `.agent/specs/WorkflowHandoffContract.md` 为准。本文件不重复这两份规范的细节。
+
 角色数量不是质量指标。只启用能为当前任务增加明确价值的角色。
 
 正常运行只依赖 Git + Artifacts + `.agent/specs/WorkflowAgentDirective.md` + `.agent/specs/*` + `.agent/roles/*` + `docs/design/*`，不依赖临时文件 `PROJECT_ADAPTATION.md`。`PROJECT_ADAPTATION.md` 只存在于 Workflow V2 首次迁移 / Adoption 到一个项目的过程中，Adoption 完成后即删除，见 `.agent/specs/WorkflowAdoption.md`。
@@ -142,6 +144,8 @@ Gate 是 Handoff 前的机械出站检查。角色 Handoff 前运行的 Gate 就
 
 `handoffReady`（非 detached、clean、remote 存在、local==remote）是每个出口 Gate 的共同前提。
 
+上表「本角色产出 Commit」列出的每个 Commit 都必须归入 `.agent/specs/WorkflowGitLifecycle.md` §2 的六种合法类型之一；其中 A1 / C1 / D1 只是**可独立验证的阶段快照**，A2 / C2 / D2 只允许写 `state.yaml`。它们都不等于 `SESSION_COMPLETE`，也不允许被描述为已审查、已接受或可交付。任何未验证的临时保存（`PROGRESS`）一律禁止。
+
 TaskBuilder **没有专用入口 Gate**：它的通用出口是 **Commit + Push + 远端同步核验**，不是 Gate。`NORMAL` 路线在上述出站收尾之后再运行既有的 `coder-start`，作为 Coder 入口 Gate 的提前自检；`COMPLEX` / `ARCHITECT` 在 `contract.status = PENDING` 时不运行 `coder-start`，直接交 Analyst（该 Gate 要求 Contract 为 `APPROVED` 或 `NOT_REQUIRED`）。下游 Coder / Architect 仍须在开工前按各自协议确认入口 Gate。
 
 `ARCHITECT` 不新增 Gate：`coder-start`、`cleaner-start`、`owner-gate-start`、`delivery-start`、`merge-ready` 五个 Gate 与语义保持不变。`cleaner-start` 在该路线下的含义是「Review Request 已稳定落 Git」，由 OwnerGate 的 V1 结构验证阶段消费，不是「交给 Cleaner Role」。
@@ -163,15 +167,18 @@ TaskBuilder **没有专用入口 Gate**：它的通用出口是 **Commit + Push 
 
 所有路线的 Git 出站统一按以下顺序执行，不得颠倒：
 
-1. 本角色职责与产物完整落盘；
-2. 显式 stage 本角色 owned artifacts，`git diff --cached` 核对无越权文件；
-3. commit（内容 Evidence 与 Metadata 分两阶段，见各角色 Prompt）；
-4. 普通 push 当前 feature branch；
-5. `git rev-parse HEAD` == `git rev-parse origin/<current-feature>`，`git status --short` 为空；
-6. 运行下一角色入口 Gate；
-7. Gate `PASS` 后才输出 HANDOFF。
+1. 本角色职责与产物完整落盘，本阶段验证真实执行；
+2. `git status --short` / `git diff` 确认没有其他角色的未提交修改；需要时运行 `.agent/specs/tools/git-lifecycle-check preflight --role <Role> --task <task>`；
+3. 显式 stage 本角色 owned artifacts，`git diff --cached --name-status` 核对无越权文件；
+4. 只提交已定义的 Commit 类型：`BOOTSTRAP` / `EVIDENCE` / `METADATA` / `ROLE_ARTIFACT` / `FORCED_EVIDENCE` / `REGISTRY_ONLY`（内容 Evidence 与 Metadata 分两阶段，见各角色 Prompt）；
+5. 普通 push 当前 feature branch；
+6. `git rev-parse HEAD` == `git ls-remote --heads origin refs/heads/<current-feature>` 的实际远端 SHA，且 `git status --short` 为空；
+7. 运行下一角色入口 Gate；
+8. Gate `PASS` 后才输出 HANDOFF。
 
-「已提交」「已 push」「已写报告」都不构成 Gate 结论，也不构成 Handoff 依据。
+「已提交」「已 push」「已写报告」都不构成 Gate 结论，也不构成 Handoff 依据。**不得提交未完成工作的普通进度保存（`PROGRESS`）**；A1/C1/D1 等中间 Evidence Commit 只有在满足 `.agent/specs/WorkflowGitLifecycle.md` §4.3 的全部完成条件时才允许存在。
+
+Push 失败、远端 SHA 不一致、工作区 dirty 或 Gate `FAIL` 时：不得 HANDOFF，不得宣称 `REMOTE_SYNCED=YES`；按 `.agent/specs/WorkflowGitLifecycle.md` §8 处置。`origin/<current-feature>` 是本地 tracking ref，远端事实必须用 `git ls-remote` 核验。
 
 `ARCHITECT` 路线的 OwnerGate 必须分两次出站：V1 结构验证证据（`findings.md` / `core-logic.md` / `state.review`）先 commit + push + 远端核验，再运行 `owner-gate-start`；V2 的 Owner 决策（`owner-decision.md` / `state.owner`）再单独 commit + push。不得把两个阶段合并成一次提交，也不得在 V1 尚未落 Git 时请求 Owner 决策。
 
@@ -242,7 +249,8 @@ Owner 不需要逐行 Review 全部代码。交付应帮助 Owner 理解：
 - Agent 禁止：删除/重命名 branch、merge feature→develop、`push --force`、`reset --hard`、`clean -fd`、`git add -A` / `git add .`、rebase 已发布历史、`commit --amend`、rewrite history。`push develop` 默认禁止——唯一例外是 Analyst 的 Registry-only develop commit（仅 `.agent/workflow.yaml` 已声明的 Registry 文件，见 §12.2）。
 - 创建 branch 默认禁止；唯一例外是 TaskBuilder 经 Owner 授权的当前任务初始分支创建（`TB-BRANCH-1`，见 §11.1）。
 - 这些 git 写约束是协议/Prompt 硬约束；shared develop 的机器级保护交给仓库 branch protection / 外部 Git 控制能力。`.agent/bin/workflow-check` 只读，不拦截 git 写命令。
-- 标准 commit 前流程：`git status --short` → `git diff` → `git add <明确属于本角色的文件>` → `git diff --cached` → `git commit`。发现其他角色遗留修改 → STOP，不得顺便提交。
+- 本规范不增加 Git Hook、不修改仓库全局配置、不拦截开发者日常 Git 操作。`git commit` / `git push` 的时机约束是 **SPEC_ONLY**，不得描述为 Engine 强制；可复核的防线是 Gate 与真实 Git 证据，以及 `.agent/specs/WorkflowGitLifecycle.md` §12 的只读前置自检。
+- 标准 commit 前流程：`git status --short` → `git diff` → `git add <明确属于本角色的文件>` → `git diff --cached --name-status` → `git commit`。发现其他角色遗留修改 → STOP，不得顺便提交。Commit 类型必须属于 `.agent/specs/WorkflowGitLifecycle.md` §2 的合法类型。
 - Agent-generated commit message 默认使用中文摘要，保持 Conventional Commit 结构：`<type>(<scope>): <中文摘要>`。`type` / `scope` 保留英文关键字（常用 `feat` / `fix` / `refactor` / `test` / `docs` / `chore`），中文只用于 summary。不要求 summary 必须英文，不因中文 commit message 阻塞流程。
 
 Owner 决定关键业务规则、Contract、是否接受核心逻辑、是否启动 Deliverer，以及最终接受、Commit、Merge、Push 和 Deploy。
@@ -277,6 +285,8 @@ C 类**不得以任何形式要求注册**；新增资源类型进入治理须�
 `.agent/registry/`（`develop` 上）是全局资源分配状态的权威事实源。机器配置 `.agent/workflow.yaml` 的 `resources.<kind>.registry` 声明当前项目有哪些 Shared Resource Kind 及各对应哪个 Registry 文件（当前 my-shop 为 `migration_version → .agent/registry/migrations.md`、`error_code_domain → .agent/registry/error-codes.md`）。Analyst 的 Registry-only shared-develop mutation 仅限该配置已声明的 Registry 文件。
 
 需要资源时，Analyst 读取 `.agent/workflow.yaml` 确认当前项目已声明哪些 Shared Resource Kinds → fetch `origin/develop` → 读取对应 Registry → 计算 candidate value → 检查空闲 → 将 candidate 写入 Contract 并请求 Owner Contract Decision。Contract APPROVED 后，Analyst 形成 Registry-only commit（仅含配置已声明的 Registry 文件）并 push `origin develop` 落实 `RESERVED`。push 前必须确认 staged/commit diff 只含这些合法 Registry 文件，出现任何其他路径 → 立即 STOP；push 因 non-fast-forward 被拒时禁止 force，改为 fetch 最新 develop → 重新读取 Registry → 重新计算资源 → 重新形成合法 reservation。落 `RESERVED` 后，Analyst 重新读取 `origin/develop` Registry 验证：资源存在、owner 正确、状态 `RESERVED/ACTIVE`，通过后才 HANDOFF Coder。
+
+该提交类型是 `REGISTRY_ONLY`（定义见 `.agent/specs/WorkflowGitLifecycle.md` §2）：它不是交付完成，不构成 HANDOFF，也不授权任何其他 develop 写入；staged / commit diff 出现 Registry 之外的路径时必须 STOP。
 
 Feature Branch 内自行声明 `RESERVED` 不构成有效预留；`state.yaml.resources.reservations` 只记录「需要什么」，不自证满足。
 
