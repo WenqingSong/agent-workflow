@@ -37,7 +37,7 @@ issue: <新证据、失败行为或冲突>
 - 当前行为、约束和未知项有证据区分；
 - Owner 只需决定真正影响行为、风险或成本的问题；
 - 推荐方案能够满足 Task，而不暗中扩大 Scope；
-- Coder 知道必须保持哪些接口、不变量和失败语义；
+- Coder（或 `ARCHITECT` 路线的 Architect）知道必须保持哪些接口、不变量和失败语义；
 - 长期 Design（`docs/design/*`）在 Contract `APPROVED` 后同步沉淀，成为后续任务与接手者的权威事实；
 - Cleaner 知道用什么证据审查实现。
 
@@ -204,7 +204,7 @@ RECOMMENDATION：……
 3. 在 `Owner Decision Record` 记录决定和适用范围；
 4. 关键问题全部解决后才改为 `APPROVED`；
 5. `Design Impact = NEW/UPDATE` 时，基于 APPROVED Contract 新增/更新对应 `docs/design/*`；
-6. 按「A1 / A2 Evidence 与出口契约」完成提交与 push，`coder-start` `PASS` 后再给 Coder 简要交接已确认约束与剩余非阻塞风险。
+6. 按「A1 / A2 Evidence 与出口契约」完成提交与 push，`coder-start` `PASS` 后按路线给 Coder（`NORMAL` / `COMPLEX`）或 Architect（`ARCHITECT`）简要交接已确认约束与剩余非阻塞风险。
 
 Owner 的决定改变 Task 时，先由 Owner 或 Task Builder 更新 Task，再批准相容的 Contract。
 
@@ -229,7 +229,7 @@ Analyst 的出口是 `.agent/bin/workflow-check gate coder-start <task>`，且�
 3. `git status --short` → 只 stage `state.yaml` → `git diff --cached` → commit；
 4. 普通 push 当前 feature branch（Registry 文件按 Registry-only 例外单独 push shared integration branch）；确认 `git rev-parse HEAD` == `git rev-parse origin/<current-feature>`，`git status --short` 为空；
 5. 运行 `.agent/bin/workflow-check gate coder-start <task>`；
-6. 只有 Gate `PASS` 后才 HANDOFF → Coder。
+6. 只有 Gate `PASS` 后才 HANDOFF：`NORMAL` / `COMPLEX` → Coder；`ARCHITECT` → Architect。
 
 `contract.target` 一律写完整 40 位 Commit SHA；不得写 `HEAD`、`HEAD~1`、分支名、Tag、`origin/<branch>` 或其他可移动引用。`coder-start` 会机械核验 target 是真实 commit、是当前 feature HEAD 的祖先，且该 target 上的 `contract.md` 与工作区 `contract.md` 完全一致。
 
@@ -238,6 +238,25 @@ Owner 尚未批准、明确拒绝或要求修改 Contract 时：
 - 保持 `contract.status=PENDING`；Owner 明确拒绝时写 `REJECTED` 并记录理由；
 - 不得写 `APPROVED`，也不得为通过 Gate 把状态改成 `NOT_REQUIRED`；
 - Contract 被拒绝或发生实质修订时，必须形成新的 `contract.md` 并重新取得 Owner 明确批准，再形成新的 A1 / A2；旧 A1、旧批准结论与旧 `contract.target` 一律不得复用。
+
+## ARCHITECT 路线
+
+`ARCHITECT` 的 TaskBuilder 出口与 `COMPLEX` 相同：`contract.status=PENDING`，先交 Analyst。Analyst 在此路线上的 A1 / A2、Design、Registry 与 `coder-start` 出口流程与 `COMPLEX` 完全一致，只有 Contract 内容与下一角色不同。
+
+Contract 必须把交付物限定为**可验证的结构成果**，至少写明：
+
+- 架构目标与非目标：本次要建立的模块 / 边界 / 接口，以及明确不建立的结构；
+- 模块与职责边界，接口形状与依赖方向（允许 / 禁止方向）；
+- 结构骨架允许到达的深度，以及骨架内允许存在的占位实现；
+- Contract / AC 到结构落点与结构验证命令的对应关系；
+- 明确列出**不在本任务实现**的业务行为，并标注 `NOT_EXECUTED` 与后续归属；
+- 明确禁止事项：完整业务功能、数据库 Migration、未获批准的 DB Schema 变更、新外部依赖、未获批准的构建 / 部署模型变化。
+
+若 Task 或 Owner 的期望实际要求完整业务实现，这不是 `ARCHITECT` 能交付的范围：不得把业务实现写进 Contract 蒙混过关，也不得自行降级为 `COMPLEX`；把证据交 Owner，由 Owner 明确决定是否切换路线并重新批准 Contract。
+
+`ARCHITECT` 下 A2 的 `coder-start` `PASS` 表示「按已批准 Contract 可以开始结构实现」，下一角色是 **Architect**，不是 Coder。复用该 Gate 不改变角色身份，也不改变 Gate 语义。
+
+`ARCHITECT` 不经过 Cleaner：结构成果由 OwnerGate 在独立 Session 中执行其结构验证阶段（先 `cleaner-start`，再 `owner-gate-start`）。Analyst 不得把 Architect 自述或自身推荐当作结构验证结论，也不得提前替 OwnerGate 宣布 `CLEAN`。
 
 ## 长期 Design（`docs/design/*`）
 

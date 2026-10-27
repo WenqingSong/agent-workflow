@@ -2,7 +2,7 @@
 
 > **Workflow V3 Baseline**（`.agent/VERSION` = `3.0.0`）
 >
-> 当前 Workflow 协作 / 工程架构 major version 为 **V3**。Baseline 包含：six-role independent-session workflow、Evidence Snapshot、machine gates、Generic Shared Resources、strict YAML、independent Workflow Engine module、Adoption mechanism。
+> 当前 Workflow 协作 / 工程架构 major version 为 **V3**。Baseline 包含：independent-session role workflow（`NORMAL` / `COMPLEX` 六角色，`ARCHITECT` 增加 Architect 且不经过 Cleaner，见 §32）、Evidence Snapshot、machine gates、Generic Shared Resources、strict YAML、independent Workflow Engine module、Adoption mechanism。
 >
 > 已知验证边界：Cross-project Adoption Dogfood **NOT PERFORMED**（DEFERRED BY OWNER）。portability architecture 已静态与内部验证，但尚未在第二个真实项目验证跨项目 Adoption。
 >
@@ -10,7 +10,7 @@
 
 本文是 Workflow V3 的**唯一核心架构 Design 文档**：解释「为什么这样设计」「整个系统如何运行」「各概念之间的关系」「为什么需要这些 Gate / Git / Evidence 规则」。
 
-本文定位是「**为什么**」。`.agent/specs/*`（Workflow Agent Directive、协作规范、职责边界）与 `.agent/roles/*`（六个角色 Prompt）负责「**具体怎么做**」，引用本文，不重复定义。
+本文定位是「**为什么**」。`.agent/specs/*`（Workflow Agent Directive、协作规范、职责边界）与 `.agent/roles/*`（各角色 Prompt）负责「**具体怎么做**」，引用本文，不重复定义。
 
 事实源优先级：
 
@@ -46,13 +46,21 @@ Workflow V2 不是抽象的设计稿，而是针对真实执行中暴露的缺�
 
 ---
 
-## 2. 六角色模型
+## 2. 角色模型
+
+`NORMAL` / `COMPLEX`（六个角色）：
 
 ```text
 TaskBuilder → Analyst → Coder → Cleaner → OwnerGate → Deliverer → Owner Integration
 ```
 
-Owner 不是第七个 Agent，而是整个 Workflow 的 **Decision Authority + Shared Repository Authority**（人类控制面）。
+`ARCHITECT`（七个角色，不经过 Cleaner）：
+
+```text
+TaskBuilder → Analyst → Architect → OwnerGate（V1 结构验证 → V2 Owner 决策）→ Deliverer → Owner Integration
+```
+
+Owner 不是序列中的第八个 Agent，而是整个 Workflow 的 **Decision Authority + Shared Repository Authority**（人类控制面）。`ARCHITECT` 是 P05 引入的第三条正式路线，其设计见 §32。
 
 ### 为什么每个角色使用独立 Agent Session
 
@@ -65,11 +73,12 @@ Owner 不是第七个 Agent，而是整个 Workflow 的 **Decision Authority + S
 
 | 角色 | 回答的问题 | 输入 | 主要职责 | 负责的 Artifact | Authority | 明确禁止 | 完成条件 | 下一角色 |
 |---|---|---|---|---|---|---|---|---|
-| **TaskBuilder** | 交付什么、怎样判断完成 | Owner 需求 | 把需求整理成可执行、可验收的 `task.md` | `task.md`、`state.yaml` 初始结构 | 定义任务边界与路由；受控初始分支创建（§3 例外，P03 定义细则） | 写生产代码；删除/重命名 branch；受控例外之外的分支操作；替 Owner/Analyst 作关键决定 | `task.md` + 初始 `state.yaml` + 明确路由 | Analyst（COMPLEX）或 Coder（NORMAL） |
-| **Analyst** | 有哪些约束、可行方案、必须保持什么性质 | `task.md` | 调查约束、出方案、写 Contract、派生资源、沉淀长期 Design | `contract.md`、`docs/design/*`、`state.contract`、`state.resources` | **唯一** Registry-only develop mutation authority | 改生产代码/测试；批准自己的推荐；改 shared develop 其他内容 | Contract APPROVED + Registry Reservation 落地 + 两段式提交 | Coder |
+| **TaskBuilder** | 交付什么、怎样判断完成 | Owner 需求 | 把需求整理成可执行、可验收的 `task.md` | `task.md`、`state.yaml` 初始结构 | 定义任务边界与路由；受控初始分支创建（§3 例外，P03 定义细则） | 写生产代码；删除/重命名 branch；受控例外之外的分支操作；替 Owner/Analyst 作关键决定 | `task.md` + 初始 `state.yaml` + 明确路由 | Analyst（`COMPLEX` / `ARCHITECT`）或 Coder（`NORMAL`） |
+| **Analyst** | 有哪些约束、可行方案、必须保持什么性质 | `task.md` | 调查约束、出方案、写 Contract、派生资源、沉淀长期 Design | `contract.md`、`docs/design/*`、`state.contract`、`state.resources` | **唯一** Registry-only develop mutation authority | 改生产代码/测试；批准自己的推荐；改 shared develop 其他内容 | Contract APPROVED + Registry Reservation 落地 + 两段式提交 | Coder（`NORMAL`/`COMPLEX`）或 Architect（`ARCHITECT`） |
+| **Architect**（`ARCHITECT`） | 结构应当怎样成立 | `task.md` + APPROVED `contract.md` | 交付模块边界 / 接口骨架 / 结构测试与 `architecture.md` | `architecture.md`、结构骨架、结构测试、`state.review`（PENDING） | 在 Contract 限定的结构范围内实现 | 完整业务功能、DB Migration、未批准 Schema、新外部依赖、未批准构建/部署变化；写 `CLEAN`/`owner`/`delivery` | D1 结构快照 + D2 Review Metadata | OwnerGate（V1 结构验证） |
 | **Coder** | 怎样在既定范围内完成实现 | `task.md` + APPROVED `contract.md` | 实现 AC、写测试、发起 Review Request | 业务代码、migration、tests、`state.review`（PENDING） | 在 feature 内实现 | 自行改 Contract/Task；写 `CLEAN`/`owner`/`delivery`；自行推断资源编号 | 实现 + 两段式提交（C1 + C2） | Cleaner |
 | **Cleaner** | 完整变更是否满足任务、测试是否可信 | `task.md` + Contract + C1 | 独立审查、写 Finding、整理核心逻辑、给出 CLEAN | `findings.md`、`core-logic.md`、`state.review`（CLEAN） | 审查结论 | 默认不改生产代码/测试；写 `owner` 状态；替 Owner 最终接受 | CLEAN + artifacts commit/push + `owner-gate-start` PASS | OwnerGate |
-| **OwnerGate** | 核心机制是什么、请求 Owner 决策并持久化 | CLEAN review | 提炼 1~3 个核心机制、解释给 Owner、持久化 Owner 决定 | `owner-decision.md`、`state.owner` | File Writer（**不是** Decision Authority） | 改代码/Contract/Review；自行生成 `ACCEPTED` | Owner 决定持久化 + `delivery-start` PASS | Deliverer |
+| **OwnerGate** | 核心机制是什么、请求 Owner 决策并持久化；`ARCHITECT` 下先独立验证结构 | CLEAN review（`ARCHITECT`：D2 Review Request） | 提炼 1~3 个核心机制、解释给 Owner、持久化 Owner 决定；`ARCHITECT` V1 独立结构验证 | `owner-decision.md`、`state.owner`；`ARCHITECT` V1：`findings.md`、`core-logic.md`、`state.review` | File Writer（**不是** Decision Authority）；`ARCHITECT` V1 验证责任 | 改代码/Contract/结构产物；自行生成 `ACCEPTED` | Owner 决定持久化 + `delivery-start` PASS | Deliverer |
 | **Deliverer** | 能否在目标环境真实运行 | CLEAN + Owner ACCEPTED | 里程碑运行验证，记录三个不可变 SHA | `delivery.md`、`state.delivery` | 验证 | merge/push develop；修生产代码；替 Owner 接受 | delivery PASS + `merge-ready` PASS | Owner（集成决策） |
 
 Owner 保留四类真正需要人判断的职责：Task / Branch Boundary、Contract Decision、Core Logic Decision、Shared Integration Decision。
@@ -153,9 +162,10 @@ git fetch
 |---|---|
 | TaskBuilder | `task.md`、task initialization / task metadata |
 | Analyst | `contract.md`、业务设计文档（`docs/design/*`）、resource proposal / contract 状态 |
+| Architect | `architecture.md`、结构骨架、结构测试（仅 `ARCHITECT`；结构验证阶段只读） |
 | Coder | 业务代码、migration、tests、实现相关文件 |
-| Cleaner | `findings.md`、`core-logic.md`、review 状态 |
-| OwnerGate | `owner-decision.md`、owner acceptance/rejection 状态 |
+| Cleaner | `findings.md`、`core-logic.md`、review 状态（`NORMAL` / `COMPLEX`） |
+| OwnerGate | `owner-decision.md`、owner acceptance/rejection 状态；`ARCHITECT` V1 的 `findings.md` / `core-logic.md` / review 状态 |
 | Deliverer | `delivery.md`、delivery 状态 |
 | Owner | branch lifecycle、final integration |
 | shared Registry | Analyst Registry-only exception |
@@ -244,16 +254,21 @@ Coder：
   C1 = Implementation Evidence Commit
   C2 = Metadata / State Commit
   review.target = C1
+
+Architect（ARCHITECT）：
+  D1 = 结构实现快照（结构骨架 + architecture.md + 结构测试）
+  D2 = Metadata / State Commit
+  review.target = D1
 ```
 
-Cleaner 审查的是 **C1**，而不是「Cleaner 开始工作时当前 HEAD」。这样 Owner / Cleaner / Deliverer 讨论的是同一个不可变实现。
+Cleaner 审查的是 **C1**，而不是「Cleaner 开始工作时当前 HEAD」。`ARCHITECT` 下由 OwnerGate 的 V1 阶段审查 **D1**（§32），D1 之后只允许 Review-neutral Tail。这样 Owner / 审查方 / Deliverer 讨论的是同一个不可变对象。
 
 三种 Evidence Binding：
 
 | Binding | 绑定对象 | 语义 |
 |---|---|---|
 | Contract（INV-2） | `contract.target` = A1 | Owner 最终批准的 `contract.md` Evidence Commit |
-| Review（INV-3 / INV-4） | `review.target` = C1 | Cleaner 真正审查的 immutable implementation Evidence Commit |
+| Review（INV-3 / INV-4） | `review.target` = C1 或 D1 | 审查方真正审查的 immutable Evidence Commit：`NORMAL` / `COMPLEX` 为 Cleaner 审查的 C1；`ARCHITECT` 为 OwnerGate V1 验证的 D1 |
 | Delivery（INV-6） | `delivery.review_target` / `feature_head` / `develop_base` | 被验证的业务实现 / 实际参与集成的 feature snapshot / 验证时的 develop 基线 |
 
 ### Evidence 字段的写入形态（F-03）
@@ -278,10 +293,11 @@ Metadata Commit（只写 state.yaml，引用 Evidence Commit 的 SHA）
 
 - Analyst：A1（contract 内容）→ A2（只写 `state.contract.status=APPROVED`、`state.contract.target=A1`）。
 - Coder：C1（业务代码 + 测试）→ C2（只写 `state.review.status=PENDING`、`state.review.target=C1`）。
+- Architect（`ARCHITECT`）：D1（结构骨架 + `architecture.md` + 结构测试）→ D2（只写 `state.review.status=PENDING`、`state.review.target=D1`）。
 
-Metadata Commit 是「事后引用」Evidence Commit 的 SHA，因此 SHA 可以精确落盘。Cleaner 审 C1，不是 C2。
+Metadata Commit 是「事后引用」Evidence Commit 的 SHA，因此 SHA 可以精确落盘。Cleaner 审 C1，不是 C2；`ARCHITECT` 下 OwnerGate V1 审 D1，不是 D2。
 
-`A1` / `C1` 在这里是 Evidence Commit 的符号名；写入 `state.yaml` 时必须是该 commit 的**完整 40 位 SHA**，不能是 `HEAD`、分支名、Tag 或短 SHA（见 §7 Evidence 字段的写入形态）。
+`A1` / `C1` / `D1` 在这里是 Evidence Commit 的符号名；写入 `state.yaml` 时必须是该 commit 的**完整 40 位 SHA**，不能是 `HEAD`、分支名、Tag 或短 SHA（见 §7 Evidence 字段的写入形态）。
 
 ---
 
@@ -313,6 +329,8 @@ Evidence Snapshot 之后可以存在**有限**的 metadata commit，但必须严
 ```
 
 `loop-ledger.md` 与 `danger-report.md` 是 V3.1 循环熔断的证据文件（§31）。它们进入两条 Tail 的原因不同：Review Tail 允许 CLEAN 之后继续记录循环，Delivery Tail 允许 Delivery PASS 之后记录 DANGER 与 Owner 授权的恢复动作。两者都是**精确文件名 + 当前 Task 根目录**豁免，不扩大到其他目录、其他 Task 或本 Task 子目录。
+
+`architecture.md` **不在**两条 Tail 的白名单内。它是 `ARCHITECT` 的结构事实，必须与结构骨架、结构测试一起进入 D1；D1 之后修改它属于 substantive change，旧 CLEAN 立即失效。这是有意的：结构说明与结构实现必须在同一个不可变快照里，否则无法证明被审查的结构就是被描述的结构。
 
 ### 判定逻辑（以真实代码为准）
 
@@ -395,9 +413,9 @@ Gate 是 Handoff 前的机械出站检查。每个 Gate 回答一个「现在能
 
 | Gate | 为什么存在 | 关键前置 |
 |---|---|---|
-| `coder-start` | 保证 Coder 开始前 Contract / Resource 已合法 | `blocked.active=false` + `handoffReady` + Contract 有效 + Resources 授权 |
-| `cleaner-start` | 保证 Cleaner 审的是稳定 Implementation Evidence | `blocked.active=false` + `review.status=PENDING` + target 真实且在 feature 历史 + `handoffReady` + review tail 仅 neutral |
-| `owner-gate-start` | 保证 Cleaner 已完成 CLEAN 持久化和 Git 收尾 | `blocked.active=false` + `handoffReady` + `review.status=CLEAN` + cleanValidity PASS |
+| `coder-start` | 保证实现者开始前 Contract / Resource 已合法（`ARCHITECT` 下实现者是 Architect，语义不变） | `blocked.active=false` + `handoffReady` + Contract 有效 + Resources 授权 |
+| `cleaner-start` | 保证审查方拿到的是稳定 Implementation Evidence（`ARCHITECT` 下由 OwnerGate V1 消费） | `blocked.active=false` + `review.status=PENDING` + target 真实且在 feature 历史 + `handoffReady` + review tail 仅 neutral |
+| `owner-gate-start` | 保证审查方已完成 CLEAN 持久化和 Git 收尾（`NORMAL` / `COMPLEX` 为 Cleaner，`ARCHITECT` 为 OwnerGate V1） | `blocked.active=false` + `handoffReady` + `review.status=CLEAN` + cleanValidity PASS |
 | `delivery-start` | 保证 Owner 已绑定当前 CLEAN review | `blocked.active=false` + Contract/Resources 有效 + cleanValidity + `owner.status=ACCEPTED`（`NOT_REQUIRED` 不构成接受事实）+ `owner.review_target==review.target` + `handoffReady` |
 | `merge-ready` | 只表示 feature 已满足交给 Owner 集成的机械条件，**不代表 Agent 可以自行 merge** | `blocked.active=false` + 上述全部 + `delivery.status=PASS` + delivery 三个 SHA 绑定 + develop/feature 新鲜度 + `handoffReady` |
 
@@ -409,7 +427,7 @@ Gate 由当前角色在出站时运行，是**下一角色的入口检查**。
 
 ```text
 NORMAL：
-TaskBuilder（Commit + Push + 远端同步核验，不运行 Gate）
+TaskBuilder（Commit + Push + 远端同步核验；随后运行 coder-start 作为 Coder 入口 Gate 的提前自检）
   → coder-start    → Coder
   → cleaner-start  → Cleaner
   → owner-gate-start → OwnerGate
@@ -424,12 +442,22 @@ TaskBuilder（contract.status=PENDING；Commit + Push + 只读同步自检，不
   → owner-gate-start → OwnerGate
   → delivery-start → Deliverer
   → merge-ready    → Owner
+
+ARCHITECT：
+TaskBuilder（contract.status=PENDING；Commit + Push + 只读同步自检，不运行 coder-start）
+  → Analyst：A1 Contract Evidence（限定结构交付）→ A2 Approval Metadata（Commit + Push）
+  → coder-start    → Architect（复用「实现授权」检查，不使其成为 Coder）
+  → D1 结构快照 → D2 Review Metadata（Commit + Push）
+  → cleaner-start  → OwnerGate V1 独立结构验证（新 Session；持久化 CLEAN，review.target=D1）
+  → owner-gate-start → OwnerGate V2 Owner 决策（Commit + Push）
+  → delivery-start → Deliverer（结构交付验收）
+  → merge-ready    → Owner
 ```
 
 - `coder-start` 要求 Contract 为 `APPROVED` 或 `NOT_REQUIRED`，因此 `COMPLEX` / `ARCHITECT` 的 `PENDING` 阶段不得运行它，也不得为了通过它把 Contract 改成 `NOT_REQUIRED`。
 - `owner-gate-start` `PASS` 只证明 CLEAN 与 Git 收尾满足机器约束，**不等于 Owner 已经接受**；OwnerGate 必须进入明确的 Owner 决策阶段。
 - `delivery-start` `PASS` 只表示可以开始验收；`merge-ready` 才是最后一个 Agent Gate，`PASS` 之后才允许向 Owner 输出可集成结论。
-- `ARCHITECT` 为预留路线：TaskBuilder 出口与 `COMPLEX` 相同（`PENDING` → Analyst）。其角色与独立审查路径不由本轮定义，也不得被删除或降级为 `NORMAL`。
+- `ARCHITECT` 由 P05 接入：TaskBuilder 出口与 `COMPLEX` 相同（`PENDING` → Analyst），新增 Architect Role，结构验证由 OwnerGate 的 V1 阶段在独立 Session 中承担，**不经过 Cleaner**，且**不新增 Gate**（五个 Gate 的语义与 `blocked` 拦截完全不变）。不得被删除或降级为 `NORMAL`。
 
 ---
 
@@ -702,8 +730,8 @@ Workflow V2 Core（Roles、Authority、Evidence Snapshot、Handoff、Gate、Comp
 - Workflow Core 可迁移；项目差异由一次性 Adoption 解决。
 - `PROJECT_ADAPTATION.md` 是**临时工作单**，只存在于迁移 / Adoption 过程中。
 - Adoption 完成后 `PROJECT_ADAPTATION.md` 必须删除，不成为长期事实源。
-- Adoption 不新增第七个长期 Agent Role；完成后正常项目回到原六角色模型。
-- 正常六角色运行不依赖 `PROJECT_ADAPTATION.md`。
+- Adoption 不新增长期 Agent Role；完成后 `NORMAL` / `COMPLEX` 回到原六角色模型（`ARCHITECT` 的 Architect 由路线启用，不来自 Adoption）。
+- 正常运行不依赖 `PROJECT_ADAPTATION.md`。
 
 Adoption 的五阶段（DISCOVER → RESOLVE → MATERIALIZE → VERIFY → CLEANUP）、`PROJECT_ADAPTATION.md` 生命周期、Migration / Registry 的 `ENABLED / DISABLED / NOT_APPLICABLE` 抽象、以及当前源项目 Validator 的项目耦合清单，详见 `.agent/specs/WorkflowAdoption.md`，不在本文重复。模板见 `.agent/templates/PROJECT_ADAPTATION.template.md`。
 
@@ -830,9 +858,82 @@ Engine **不能**保证：账本 append-only、轮次真实、根因归类正确
 
 ---
 
+## 32. ARCHITECT 路线（V3.1.0）
+
+### 为什么需要第三条路线
+
+`NORMAL` / `COMPLEX` 都以「实现可观察业务行为」为目标：Coder 写业务代码，Cleaner 审查业务实现是否满足 Task 与 Contract。结构设计任务不同：
+
+- 交付物是模块边界、接口、依赖方向与结构骨架，业务行为可以（也应当）不在本任务内实现；
+- 用「Cleaner 审查业务实现」的标准衡量结构成果，会强迫 Architect 顺手实现业务功能，或让审查方用错误标准放行；
+- 用 `NORMAL` 直接交 Coder 则丢失独立结构审查，等于让结构设计自己证明自己。
+
+因此 `ARCHITECT` 是一条**独立路线**，不是 `COMPLEX` 的别名，也不是 `NORMAL` 的降级。
+
+### 角色与阶段
+
+`TaskBuilder → Analyst → Architect → OwnerGate → Deliverer → Owner`，其中 OwnerGate 承担两个阶段：
+
+| 阶段 | 执行者 | 入口 Gate | 产出 |
+| --- | --- | --- | --- |
+| V1 独立结构验证 | 被明确指定为 ARCHITECT OwnerGate 的**新 Session** | `cleaner-start` | `findings.md`、`core-logic.md`、`review.status=CLEAN`（`review.target=D1`），Commit + Push 后运行 `owner-gate-start` |
+| V2 Owner 决策 | 同一 OwnerGate Session | `owner-gate-start` | `owner-decision.md`、`owner.status=ACCEPTED`（`owner.review_target=D1`），Commit + Push 后运行 `delivery-start` |
+
+### 为什么 ARCHITECT 不经过 Cleaner
+
+Cleaner 的职责与证据标准绑定在「业务实现 + 业务测试」上（§7、§14）：它审 C1、检查 AC 行为、判断测试能否识别错误实现。结构任务没有业务实现可审，让 Cleaner 走同一流程只会产生两种坏结果：Cleaner 以业务标准拒绝结构交付，或 Cleaner 用结构标准放行而 Cleaner 的 `CLEAN` 语义被悄悄改写。
+
+`ARCHITECT` 的处理是把**验证职责**交给同一条路线上真正需要独立判断的一方：OwnerGate 在 V1 阶段先做结构验证，再请求 Owner 决策。这样既保留「验证者 ≠ 作者」，又不改写 Cleaner 的职责边界。
+
+### 为什么不新增 Gate
+
+`ARCHITECT` 复用的五个 Gate 已覆盖它需要的全部机器事实：
+
+- `coder-start`：Contract 已批准 + 资源已授权 + `handoffReady` → 「可以按 Contract 动手」；
+- `cleaner-start`：`review.status=PENDING` + `review.target` 属于当前 feature 历史 + Review Tail 仅 neutral → 「Review Request 已稳定落 Git」；
+- `owner-gate-start`：CLEAN 仍有效 → 「可以请求 Owner 决策」；
+- `delivery-start` / `merge-ready`：Owner 已接受 + Delivery 绑定与新鲜度。
+
+新增 Gate 只会增加绕过面，且无法弥补「验证者身份不可机器认证」这一真实边界。复用的代价是要在 Prompt 层写清 Gate 在该路线下的语义（`coder-start` ≠ 变成 Coder；`cleaner-start` ≠ 交给 Cleaner），这由 `.agent/roles/*` 承担。
+
+### 证据链
+
+```text
+A1 contract.md（结构交付限定）→ A2 contract.status=APPROVED / target=A1
+D1 结构骨架 + architecture.md + 结构测试 → D2 review.status=PENDING / target=D1
+V1 findings.md + core-logic.md + review.status=CLEAN（target 保持 D1）
+V2 owner-decision.md + owner.status=ACCEPTED / review_target=D1
+Deliverer delivery.md + delivery.review_target / feature_head / develop_base
+```
+
+`architecture.md` 与结构测试都在 D1 内；D1 之后只允许当前 Task 的 Review-neutral / Delivery-neutral artifacts。D1 之后修改结构代码或 `architecture.md` 会使旧 CLEAN 机械失效。
+
+### 与 COMPLEX 的边界
+
+- 只要需要完整业务功能、数据库 Migration、未获批准的 DB Schema 变更、新外部依赖或构建 / 部署模型变化，就不是 `ARCHITECT` 能交付的范围；
+- Architect 遇到这类需求必须停止并回交 Analyst / Owner，由 Owner 明确决定是否切换到 `COMPLEX`；
+- 切换后必须重新核对 Contract 与 Evidence：`ARCHITECT` 的 `CLEAN` 只是结构验证结论，**不是** `COMPLEX` 的 Cleaner 审查结论，也不覆盖业务实现正确性。
+
+### 诚实的验证边界
+
+Engine 只能机械保证：
+
+1. `review.status` / `review.target` / Tail 白名单 / `handoffReady` / Contract / Owner / Delivery 绑定符合既有规则；
+2. `blocked.active=true` 时五个 Gate 一律拒绝，`ARCHITECT` 不能靠换 Gate 绕过 DANGER；
+3. `cleaner-start` 要求 `PENDING`，因此自行写 `CLEAN` 后再运行它必然 `FAIL`。
+
+Engine **不能**保证：执行 V1 的 Session 不是 Architect 本人、Git 作者真实独立、`findings.md` 中的验证确实执行过、`architecture.md` 与实际结构一致。这些是 Role Prompt + Session 隔离 + Review 证据的约束，不能宣称为机器级身份认证。
+
+### 非回归
+
+`NORMAL` / `COMPLEX` 的角色顺序、Contract / Review / Owner / Delivery 语义、五个 Gate、`state.yaml` schema 与本路线引入前完全一致。`ARCHITECT` 只新增角色 Prompt 与文档语义，`workflow-check` 无代码变更。
+
+---
+
 ## 附录：ASCII Flow
 
 ```text
+NORMAL / COMPLEX：
 TaskBuilder
    ↓
 Analyst（Contract Decision / Registry Reservation）
@@ -846,11 +947,27 @@ OwnerGate（Owner Core Logic Decision）
 Deliverer
    ↓
 Owner Integration
+
+ARCHITECT：
+TaskBuilder（contract.status=PENDING）
+   ↓
+Analyst（A1/A2，Contract 限定结构交付）
+   ↓
+Architect（D1 结构快照 → D2 Review Metadata）
+   ↓
+OwnerGate V1（新 Session：独立结构验证，review.target=D1）
+   ↓
+OwnerGate V2（Owner 决策，owner.review_target=D1）
+   ↓
+Deliverer（结构交付验收）
+   ↓
+Owner Integration
 ```
 
 Evidence Snapshot 与 Neutral Tail 的时间轴：
 
 ```text
+NORMAL / COMPLEX：
 C1 Implementation Evidence Commit
    ↓
 Cleaner neutral artifacts（findings.md / core-logic.md / state.yaml）
@@ -860,6 +977,17 @@ OwnerGate（owner-decision.md / state.owner）
 Delivery neutral artifacts（delivery.md / state.yaml）
    ↓
 Owner Integration
+
+ARCHITECT：
+D1 结构骨架 + architecture.md + 结构测试
+   ↓
+OwnerGate V1 neutral artifacts（findings.md / core-logic.md / state.yaml）
+   ↓
+OwnerGate V2（owner-decision.md / state.owner）
+   ↓
+Delivery neutral artifacts（delivery.md / state.yaml）
+   ↓
+Owner Integration
 ```
 
-`review.target` 始终指向 C1，不前移。
+`review.target` 始终指向 C1（`ARCHITECT` 下指向 D1），不前移到审查方自己的 commit。

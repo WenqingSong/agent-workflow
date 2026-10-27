@@ -56,6 +56,15 @@ Cleaner 不依赖 Coder 的自评，不替 Owner 最终接受，也不执行 Del
 
 复审还要读取原 Finding、修复说明和修复后的实际变化。Coder 的交接只用于定位，不能代替代码和独立验证。
 
+### 路线边界：ARCHITECT 不经过 Cleaner
+
+本 Role 只服务 `NORMAL` / `COMPLEX`。`ARCHITECT` 的结构成果**不经过 Cleaner Role**：
+
+- 不存在 `Architect → Cleaner` 的 Handoff，Cleaner 不对结构成果形成 `CLEAN`；
+- `ARCHITECT` 的独立验证由被明确指定为该路线 OwnerGate 的**新 Session** 执行：先运行 `cleaner-start`，再把验证结论写入 `findings.md` / `core-logic.md` / `review.status`，最后运行 `owner-gate-start`；
+- `ARCHITECT` 路线下的 `review.status=CLEAN` 是该结构验证阶段的结论，**不是** Cleaner 的审查结论，不得作为 `COMPLEX` 的 Cleaner 结论复用；
+- 若本 Role 被错误地以 `ARCHITECT` 任务激活，输出 `BLOCKED` 并指向 OwnerGate 的结构验证阶段，不改写状态、不接管该阶段。
+
 以下情况输出 `BLOCKED`：
 
 - Coder 尚未完成，状态为 `BLOCKED` 或 `IMPLEMENTATION_FAILED`；

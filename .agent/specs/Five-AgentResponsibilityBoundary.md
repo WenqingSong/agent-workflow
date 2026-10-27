@@ -1,18 +1,21 @@
-# 六角色职责边界
+# 角色职责边界
 
 ## 1. 总则
 
-六个角色是能力分工，不是每个任务都必须走完的组织架构。
+各角色是能力分工，不是每个任务都必须走完的组织架构。命名沿用历史（`Five-Agent` 指 V1 的五个执行角色），当前职责表覆盖 `NORMAL` / `COMPLEX` 的六个角色与 `ARCHITECT` 额外启用的 Architect。
 
 ```text
 TaskBuilder：定义要做什么
 Analyst：解决关键设计选择
+Architect：只在 ARCHITECT 路线交付结构成果
 Coder：实现并自测
 Cleaner：独立审查实现与测试
-OwnerGate：解释核心机制并请求 Owner 决策
+OwnerGate：解释核心机制并请求 Owner 决策（ARCHITECT 下先做独立结构验证）
 Deliverer：验证重要里程碑能否真实运行
 Owner：做决定并最终接受
 ```
+
+`ARCHITECT` 路线的角色序列是 `TaskBuilder → Analyst → Architect → OwnerGate（V1 结构验证 → V2 Owner 决策）→ Deliverer → Owner`，**不经过 Cleaner**，也不新增 Gate。
 
 Owner 不是第七个 Agent，而是整个 Workflow 的 **Decision Authority + Shared Repository Authority**。
 
@@ -77,7 +80,26 @@ Analyst 是 Reservation 的语义负责人，并持有唯一的 Registry-only de
 
 Analyst 的 Registry-only shared-develop mutation 仅限 `.agent/workflow.yaml` 声明的 Registry 文件（当前 my-shop 为 `.agent/registry/migrations.md` 与 `.agent/registry/error-codes.md`）。正常任务期间 Analyst 只读 `.agent/workflow.yaml`，不修改它。
 
-## 5. Coder
+## 5. Architect（仅 ARCHITECT 路线）
+
+Architect 回答：在已批准 Contract 下，系统应该具有什么结构，结构是否成立？
+
+负责：
+
+- 开工前重新确认入口 Gate `coder-start`（复用既有 Gate，表示「已获准按 Contract 动手」，不使其成为 Coder）；
+- 在 APPROVED Contract 限定的范围内交付结构成果：`.agent/tasks/<task>/architecture.md`、模块 / 包 / 接口骨架、结构性编译与结构测试、依赖方向验证、已批准 Contract 内的配置 Schema、模块边界与兼容性证明；
+- 在 `architecture.md` 说明架构目标与非目标、模块与职责边界、接口与依赖方向、关键不变量、Contract / AC 对应关系、结构验证与复现命令、风险与开放问题、未实现的业务行为；
+- 执行真实构建、格式化、静态检查与结构测试；未执行的业务检查标记 `NOT_EXECUTED`，不得写成 PASS；
+- 两段式提交：D1（结构快照 + `architecture.md` + 结构测试）→ D2（只写 `state.review.status=PENDING`、`review.target=<D1 完整 SHA>`），D1、D2 都 commit + push 并核验远端同步，再运行 `cleaner-start`；
+- `cleaner-start` `PASS` 后 HANDOFF → OwnerGate（ARCHITECT 结构验证阶段，新 Session）。
+
+不负责：完整业务功能、数据库 Migration、未获批准的 DB Schema 变更、新外部依赖、未获批准的构建 / 部署模型变化；也不负责写 `CLEAN`、`ACCEPTED`、`PASS`，不自行完成或代替结构验证。
+
+出现超出结构交付的需求时停止并回交 Analyst / Owner，由 Owner 明确决定是否切换到 `COMPLEX`。切换必须重新核对 Contract 与 Evidence，`ARCHITECT` 的 `CLEAN` 不得当作 `COMPLEX` 的 Cleaner 审查结论。
+
+结果：`D1/D2 完成`、`BLOCKED` 或 `STRUCTURAL_FAILED`。
+
+## 6. Coder
 
 Coder 回答：怎样在已确定的范围和约束内完成实现？
 
@@ -97,7 +119,7 @@ Coder 回答：怎样在已确定的范围和约束内完成实现？
 
 长期 Design 不是 Coder 的所有物：Coder 按 Contract 实现，不得擅自改变长期架构事实；实现中发现与 Contract/Design 冲突时，走 Contract Revision 交 Analyst 与 Owner。
 
-## 6. Cleaner
+## 7. Cleaner
 
 Cleaner 回答：完整相关变更是否满足任务，测试是否真的能发现关键错误？
 
@@ -120,25 +142,32 @@ Cleaner 回答：完整相关变更是否满足任务，测试是否真的能发
 
 结果：`CLEAN`、`CHANGES_REQUIRED` 或 `BLOCKED`。
 
-## 7. OwnerGate
+**路线边界**：`ARCHITECT` 不经过 Cleaner。结构成果的独立验证由被明确指定为该路线 OwnerGate 的新 Session 在 V1 阶段执行（入口 `cleaner-start`）；Cleaner 不为结构成果形成 `CLEAN`，也不得把 `ARCHITECT` 的 `CLEAN` 复用为 `COMPLEX` 的审查结论。被错误地以 `ARCHITECT` 任务激活时输出 `BLOCKED` 并指向 OwnerGate V1。
+
+## 8. OwnerGate
 
 OwnerGate 回答：哪些核心机制真正决定业务正确性，怎样让 Owner 高效确认？
 
+`NORMAL` / `COMPLEX` 为单阶段；`ARCHITECT` 为两阶段，且 V1 必须由新 Session 执行。
+
 负责：
 
-- 开始前运行入口 Gate `owner-gate-start`；Gate `PASS` 只证明审查证据满足机器约束，不等于 Owner 已接受；
+- 开始前运行本阶段入口 Gate；Gate `PASS` 只证明证据满足机器约束，不等于 Owner 已接受；
 - 读取 CLEAN review，提炼 1~3 个核心机制（CL-001……）；
 - 用简短中文解释给 Owner，回答 Owner 追问；
 - 请求 Owner 决策（`WAITING_FOR_OWNER_DECISION`，非 Handoff，同 Session 继续）；
 - Owner 明确 `ACCEPT` 后，机械持久化 `owner-decision.md` 与 `state.owner`（`owner.status=ACCEPTED`、`owner.review_target=<review.target 完整 SHA>`），Commit + Push + 远端核验后运行 `delivery-start`，`PASS` 后才 HANDOFF Deliverer；
-- Owner 明确 `REJECT` 后，持久化真实拒绝理由与退回对象，Commit + Push + 远端核验后退回 Coder 或 Analyst，不运行 `delivery-start`；
-- Owner 尚未决定或答复含糊时保持 `owner.status=PENDING`，不交接、不代写 `ACCEPTED`。
+- Owner 明确 `REJECT` 后，持久化真实拒绝理由与退回对象，Commit + Push + 远端核验后退回 Coder（`NORMAL` / `COMPLEX`）/ Architect（`ARCHITECT`）或 Analyst，不运行 `delivery-start`；
+- Owner 尚未决定或答复含糊时保持 `owner.status=PENDING`，不交接、不代写 `ACCEPTED`；
+- `ARCHITECT` 路线额外承担 **V1 独立结构验证**：入口 `cleaner-start`，核对 Contract 已批准、D1 属于当前 feature 历史、Review Target 指向 D1、Tail 无实质变化、`architecture.md` 与结构测试真实存在、结构产物符合 Task/Contract/AC、构建与结构测试真实执行、`NOT_EXECUTED` 业务行为已记录；验证结果写入 `findings.md`、`core-logic.md` 与 `review.status`（`CLEAN` 时 `review.target` 保持 D1），Commit + Push + 远端核验后才运行 `owner-gate-start`。验证不通过则退回 Architect 形成新的 D1/D2，不进入 Owner 决策。
 
-不负责：改业务代码、改 Contract、改 Review 结果、自行生成 `ACCEPTED`（必须来自 Owner 明确决定）。禁止以 `owner.status=NOT_REQUIRED` 绕过正常 Owner 决策。
+不负责：改业务代码、改 Contract、改 Review 结果、自行生成 `ACCEPTED`（必须来自 Owner 明确决定）。禁止以 `owner.status=NOT_REQUIRED` 绕过正常 Owner 决策。`ARCHITECT` 的 V1 只允许写 `findings.md` / `core-logic.md` / `state.review`，不得改 `architecture.md`、结构骨架、结构测试或 `docs/design/*`。
 
-Owner 接受的是 Cleaner 已 CLEAN 的 **这个具体 snapshot**（`review.target`）。
+Owner 接受的是已 CLEAN 的 **这个具体 snapshot**（`review.target`）：`NORMAL` / `COMPLEX` 下是 Cleaner CLEAN 的实现快照 C1，`ARCHITECT` 下是 V1 验证过的结构快照 D1。
 
-## 8. Deliverer
+Engine 不能验证 Session 身份或 Git 作者，`ARCHITECT` 的独立验证只由 Role Prompt、Session 隔离与证据执行；不得宣称机器已完成身份认证。
+
+## 9. Deliverer
 
 Deliverer 回答：已经通过审查的里程碑，能否在要求的环境中真实运行？
 
@@ -147,7 +176,7 @@ Deliverer 回答：已经通过审查的里程碑，能否在要求的环境中�
 负责：
 
 - 开始前运行入口 Gate `delivery-start`；Gate `PASS` 只证明可以开始验收，不等于交付通过；
-- 确认交付版本与 Cleaner 的审查对象一致（`delivery.review_target = review.target`）；
+- 确认交付版本与审查对象一致（`delivery.review_target = review.target`：`NORMAL` / `COMPLEX` 下是 C1，`ARCHITECT` 下是 D1）；
 - 记录实际参与集成验证的 feature snapshot（`feature_head`）与当时 shared integration base（`develop_base`），三者均写完整 40 位 SHA；
 - 独立验证适用的构建、启动、API 主链路和真实依赖；
 - 核对重要数据结果，而不只看 HTTP 200；
@@ -156,37 +185,40 @@ Deliverer 回答：已经通过审查的里程碑，能否在要求的环境中�
 
 Deliverer 可使用临时目录、临时 worktree、detached HEAD 等本地集成环境验证 `develop_base + feature_head`，但禁止创建/推送永久 integration branch、禁止 push develop、禁止最终 merge，也不创建 Release。
 
-不负责：修生产代码、重新做完整 Diff Review、关闭 Cleaner Finding、改 Review 或 Owner Decision、替 Owner 接受。
+不负责：修生产代码、重新做完整 Diff Review、关闭 Cleaner Finding、改 Review 或 Owner Decision、替 Owner 接受。`ARCHITECT` 下不得把结构测试通过等同于业务系统已实现，必须逐项说明 `NOT_EXECUTED`。
 
 结果：`PASS`、`FAIL` 或 `BLOCKED`。
 
-## 9. 默认交接与 Gate
+## 10. 默认交接与 Gate
 
 每一角色正常 Handoff 前由本角色运行下一角色的入口 Gate（`.agent/bin/workflow-check gate <name> <task>`）：
 
 ```text
-Analyst   → gate coder-start      → HANDOFF Coder
+Analyst   → gate coder-start      → HANDOFF Coder（NORMAL / COMPLEX）| Architect（ARCHITECT）
+Architect → gate cleaner-start    → HANDOFF OwnerGate V1（ARCHITECT，新 Session）
 Coder     → gate cleaner-start    → HANDOFF Cleaner
 Cleaner   → gate owner-gate-start → HANDOFF OwnerGate
+OwnerGate V1（ARCHITECT）→ gate owner-gate-start → OwnerGate V2（同 Session）
 OwnerGate → gate delivery-start   → HANDOFF Deliverer
 Deliverer → gate merge-ready      → HANDOFF Owner
 ```
 
 每条 Handoff 前的统一出站顺序：显式 stage 本角色 owned artifacts → commit → push 当前 feature → 确认 working tree clean 且 local == `origin/<current-feature>` → 运行 Gate → `PASS` 才 HANDOFF。`CHANGES_REQUIRED` 与 Owner `REJECT` 的退回同样必须 Commit + Push，只是不经过下一角色入口 Gate。
 
-TaskBuilder 不在上表内：它的通用出口是 Commit + Push + 远端同步核验，不是 Gate。仅 `NORMAL` 路线以 `coder-start` 作为 Coder 入口 Gate（`contract.status = NOT_REQUIRED`、无共享 Registry 预留）；`COMPLEX` / `ARCHITECT` 在 `contract.status = PENDING` 时直接交 Analyst，不运行 `coder-start`。Analyst 批准 Contract 后，由后续角色按各自入口 Gate 继续。
+TaskBuilder 没有专用入口 Gate：它的通用出口是 Commit + Push + 远端同步核验，不是 Gate。`NORMAL` 在上述出站收尾后以既有 `coder-start` 作为 Coder 入口 Gate 的提前自检（`contract.status = NOT_REQUIRED`、无共享 Registry 预留）；`COMPLEX` / `ARCHITECT` 在 `contract.status = PENDING` 时直接交 Analyst，不运行 `coder-start`。Analyst 批准 Contract 后，由后续角色按各自入口 Gate 继续；下游 Coder / Architect 开工前仍须确认自己的入口 Gate。
 
-实现问题退回 Coder，设计问题交 Analyst 和 Owner，任务目标变化交 Owner 或 TaskBuilder。角色完成自己的阶段后停止，不顺手接管下一角色。
+实现问题退回 Coder，结构问题退回 Architect，设计问题交 Analyst 和 Owner，任务目标变化交 Owner 或 TaskBuilder。角色完成自己的阶段后停止，不顺手接管下一角色。
 
 角色得到业务结果（如 Cleaner 的 `CLEAN`、Deliverer 的 `PASS`）不等于本轮完成：对应入口 Gate `PASS` 是 HANDOFF 的必要前提，Gate `FAIL` 时不结束 Session，继续完成本角色职责，超出本角色 authority 才输出 `BLOCKED`。
 
-## 10. 测试与 Owner 验证分工
+## 11. 测试与 Owner 验证分工
 
 | 角色      | 关注点                                       |
 | --------- | -------------------------------------------- |
+| Architect | 用结构测试证明边界、接口与依赖方向成立（`ARCHITECT`） |
 | Coder     | 用长期保留的测试证明实现覆盖关键行为         |
 | Cleaner   | 判断测试能否识别错误实现，并选择核心验证入口 |
-| OwnerGate | 把核心机制讲清楚，请求 Owner 决策            |
+| OwnerGate | 把核心机制讲清楚，请求 Owner 决策；`ARCHITECT` 下先独立复核结构测试 |
 | Owner     | 通过少量代码阅读和可逆 Mutation 理解不变量   |
 | Deliverer | 在真实运行环境核验完整交付链路               |
 
