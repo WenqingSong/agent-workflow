@@ -23,11 +23,13 @@ Workflow 专用指令入口：`specs/WorkflowAgentDirective.md`
 ## Structure
 
 - `roles/` — 六个独立 Agent Role Prompt
-- `specs/` — Workflow Agent Directive（Workflow 专用入口）、协作协议、Authority / Responsibility Boundary、Project Adoption
-- `templates/` — Workflow / Adoption 临时模板
-- `workflow.yaml` — Workflow Engine machine configuration
-- `registry/` — shared resource registries
-- `tasks/` — task runtime artifacts
+- `specs/` — Workflow Agent Directive（Workflow 专用入口）、协作协议、Authority / Responsibility Boundary、Project Adoption / 安装 / 升级
+- `templates/` — Workflow / Adoption / upstream provenance 模板
+- `adoption/` — 轻量 Source Distribution / install / upgrade / verify / restore 工具
+- `workflow.yaml` — Workflow Engine machine configuration（宿主真实配置，不来自发布包）
+- `upstream.yaml` — 宿主实际安装来源、B 快照与 binary 校验（只由成功事务写入）
+- `registry/` — shared resource registries（按需启用，默认不存在）
+- `tasks/` — task runtime artifacts（按需创建）
 - `engine/` — 独立 Workflow Engine Go Module（`module workflow-v2-engine`），含 `go.mod`/`go.sum`、`cmd/workflow-check`、`internal/workflow`
 - `bin/` — 本地生成的 `workflow-check` binary（Git ignore，不进入 Git）
 
@@ -50,6 +52,47 @@ GOWORK=off go -C .agent/engine build ./...
 ```
 
 Repository Root 通过 `git rev-parse --show-toplevel` 解析，与 Engine Module Root（`.agent/engine/`）无关；workflow config / task / registry 始终位于 `<repo-root>/.agent/workflow.yaml`、`<repo-root>/.agent/tasks/`、`<repo-root>/.agent/registry/`。
+
+## Install / Upgrade
+
+首次安装与升级使用 `.agent/adoption/workflow-adoption`：
+
+```bash
+# 构建可校验的 Source Distribution（源仓库必须干净）
+.agent/adoption/workflow-adoption dist --source . --output dist/
+
+# 首次安装（默认 Dry-run；确认计划后加 --execute）
+.agent/adoption/workflow-adoption install \
+  --target /path/to/host \
+  --package dist/agent-workflow-src-<commit12>.tar.gz \
+  --distribution-sha256 <sha256> \
+  --source-commit <full-40-hex> \
+  --integration-branch <owner-confirmed-branch> \
+  --owner <owner> --owner-authorized --execute
+
+# B/L/N 升级（默认 Dry-run）
+.agent/adoption/workflow-adoption upgrade \
+  --target /path/to/host \
+  --package /path/to/new-source.tar.gz \
+  --distribution-sha256 <sha256> \
+  --source-commit <new-full-40-hex> \
+  --owner <owner> --owner-authorized --execute
+
+# 校验 / 恢复
+.agent/adoption/workflow-adoption verify --target /path/to/host
+.agent/adoption/workflow-adoption restore --target /path/to/host --backup <txn> --execute
+```
+
+关键边界：
+
+- 发布包中的根 `README.md`、`.cnb.yml`、`docs/design/agent-workflow.md` 是 `package_only`，安装时不落宿主；
+- 根 `AGENTS.md` 永不创建、覆盖或删除；`.agent/workflow.yaml`、`.agent/tasks/**`、`.agent/registry/**` 是宿主保护对象；
+- 默认 `resources: {}`，不自动创建 Registry；只有显式 `--resource KIND=PATH` 才创建空表；
+- 升级必须读取上次安装的精确 B 快照；快照缺失为 `BASE_UNKNOWN`，不得用远端 HEAD 代替；
+- 冲突、B 缺失、删除未授权时 fail closed；失败自动回滚并保留报告与备份；
+- 当前 `.agent/VERSION` 为 `3.0.0`；正式 `v3.1.0` Tag / Release / binary 资产由 P08 负责。
+
+详细规范见 `specs/WorkflowAdoption.md`，工具与平台边界见 `adoption/README.md`。
 
 ## Normal Flow
 
