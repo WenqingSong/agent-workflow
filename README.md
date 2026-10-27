@@ -11,8 +11,8 @@
 | 类型 | 可复制到其他 Git 仓库的源码包（source-vendored package） |
 | 核心组成 | 七角色协作规范、任务状态与证据文件、五个机器 Gate、Go 校验器、循环熔断（DANGER）协议、安装 / 升级工具 |
 | 运行依赖 | Git；构建校验器需要 Go 1.23+；安装 / 升级工具需要 Python 3.10+ |
-| 版本 | Workflow V3.1.0（源码版本 `3.1.0`）；Go Module 名 `workflow-v2-engine` 是保留的历史标识 |
-| 发布状态 | `NOT_RELEASED`：`v3.1.0` Tag 与正式 Release 尚未创建，本文不提供已可用的 Release 下载地址 |
+| 版本 | Workflow V3.2.0（源码版本 `3.2.0`）；Go Module 名 `workflow-v2-engine` 是保留的历史标识 |
+| 发布状态 | `NOT_RELEASED`：`v3.2.0` Tag 与正式 Release 尚未创建，本文不提供已可用的 Release 下载地址 |
 
 ## 为什么做这个项目
 
@@ -93,7 +93,7 @@ Workflow 专用入口是 [`.agent/specs/WorkflowAgentDirective.md`](.agent/specs
 
 安装 / 升级不会创建或覆盖宿主根 `AGENTS.md`、根 README、CI、业务 Design、`.agent/workflow.yaml`、Tasks、Registry 与历史 Evidence。升级以 `.agent/upstream.yaml` 记录的精确 B 快照做三方比较；冲突、B 缺失或未授权删除时 fail closed。Registry 默认不创建，只有显式 `--resource KIND=PATH` 才创建空表。
 
-工具当前在 Linux 完成真实 E2E 验证；Windows 原生环境未验证，需使用 WSL2 / Linux 容器。正式 `v3.1.0` Tag、Release 与 binary 资产由 P08 负责，本仓库不提前标记 GA。
+工具当前在 Linux 完成真实 E2E 验证；Windows 原生环境未验证，需使用 WSL2 / Linux 容器。正式 `v3.2.0` Tag、Release 与 binary 资产由 P08 负责，本仓库不提前标记 GA。
 
 ## 仓库结构
 
@@ -146,4 +146,4 @@ GOWORK=off go -C .agent/engine build -o ../bin/workflow-check ./cmd/workflow-che
 - 安装 / 升级工具的真实 E2E 仅在 Linux 临时 Git 仓库验证；macOS 与 Windows 原生环境未验证。Windows 使用 WSL2 / Linux 容器或按规范手工执行。
 - 发布 Binary 覆盖 Linux x86-64、Linux ARM64、macOS Apple Silicon、Windows x86-64 四个交叉编译目标；仅 Linux x86-64 在构建环境真实运行过，其余平台只经过交叉编译与静态检查（文件类型、架构、构建信息），不构成运行时保证。
 - 校验器不执行 Git 写操作，也不自动运行角色；分支生命周期与最终集成由人类 Owner 控制。
-- 正式 `v3.1.0` Tag、Release、校验和与发布 binary 由 P08 发布流程产生；当前源码快照是发布候选，不是已发布 GA，本文不提供尚不可用的 Release 下载地址。
+- 正式 `v3.2.0` Tag、Release、校验和与发布 binary 由 P08 发布流程产生；当前源码快照是发布候选，不是已发布 GA，本文不提供尚不可用的 Release 下载地址。

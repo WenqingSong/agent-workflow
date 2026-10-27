@@ -192,6 +192,7 @@ V2 改为：**不保存 `phase`、`STALE`、`DONE`**。生命周期由 Owner 与
 
 ```yaml
 schema_version: 3
+route: NORMAL | COMPLEX | ARCHITECT        # 可选：缺失表示历史任务（Legacy），新任务必须写
 task_id: <task-slug>
 
 contract:
@@ -229,6 +230,7 @@ blocked:
 - `resources.reservations.<resource-kind>` 是 **Generic Shared Resource Reservation**：Workflow Core 只认识 resource kind → opaque value 列表，不预置任何具体资源类型（migration / error code 等只是当前 my-shop Project Config 声明的 kind）。
 - 每个 reservation value 对 Workflow Core 都是 opaque non-empty string，具体格式正确性属于 Project Policy。
 - `schema_version: 3` 是新任务当前 schema；`schema_version: 2` 仅为历史任务做 Legacy Read Compatibility（读取后 runtime normalize，不写回磁盘）。其它 schema version 调用 Gate → `ERROR`（exit 2）。
+- `route` 是 V3.2.0 的可选决策事实（`NORMAL` / `COMPLEX` / `ARCHITECT`），由 TaskBuilder 写入并与 `task.md` 的 `## Complexity` 一致；缺失表示历史任务，Engine 不推断其路线。不变量与 Engine 检查见 `.agent/specs/WorkflowRouteSelection.md`（R-1 ~ R-4）。
 
 ---
 
@@ -371,7 +373,11 @@ Evidence Snapshot 之后可以存在**有限**的 metadata commit，但必须严
 
 ```text
 workflow-check gate <coder-start|cleaner-start|owner-gate-start|delivery-start|merge-ready> <task> [--root DIR]
+workflow-check route <task> [--allow-legacy] [--root DIR]
+workflow-check version [--json]
 ```
+
+`route` 是路线事实自检（R-1 ~ R-4），**不是 Gate**：不产生 Handoff 授权，也不改变 Gate 语义。默认 strict，历史任务必须显式 `--allow-legacy`。
 
 integration branch 与 Registry 路径来自 `.agent/workflow.yaml`（见 §29 Machine Configuration），不再由 CLI 写死；本地 develop 分支不是权威。
 
@@ -385,6 +391,7 @@ go -C .agent/engine build -o ../bin/workflow-check ./cmd/workflow-check
 
 # 运行（正式 Gate 机器入口优先 direct binary，保留 0/1/2 exit code）
 .agent/bin/workflow-check gate <gate> <task>
+.agent/bin/workflow-check route <task>
 
 # 测试 / 静态检查（Engine 与 Business 分开运行）
 go -C .agent/engine test ./...
@@ -578,15 +585,18 @@ V3.1 起 `blocked` 还承担**循环熔断停机**（§31）：同一根因的�
 
 Handoff 只携带**最小必要导航和事实**，不复制完整推理过程、不携带大量主观评价、不替下一 Reviewer 做判断。
 
-当前标准 Handoff 必填项（以现行 `.agent/specs/*` 与 `.agent/roles/*` 为准）：
+V3.2.0 起出站字段由 `.agent/specs/WorkflowHandoffContract.md` 统一定义，七个角色一致：
 
-- **Git SHA**：明确当前 feature HEAD；
-- **REMOTE_SYNCED=YES**：local == `origin/<current-feature>`；
-- **NEXT_ROLE**：下一角色（必填）；
-- **NEXT_ACTION**：下一步动作（必填）；
-- **RESULT=BLOCKED**：仅阻塞退出时使用。
+```text
+RESULT / CURRENT_ROLE / NEXT_ROLE / NEXT_ACTION / NEXT_TARGET / HANDOFF_PROMPT
+```
 
-其余（已完成的 Artifact、关键结论、非阻塞风险）只保留决策所需内容。Handoff 给「路线」，Git + Artifacts 给「事实」。
+- **Git SHA** 与 **`REMOTE_SYNCED=YES`**（local == `origin/<current-feature>`）是 `NEXT_TARGET` 必须携带的事实，不是可选说明；
+- `NEXT_ROLE` 必须唯一（`NEXT_ROLE=NONE` 是合法停止），`NEXT_ACTION` 以 `HANDOFF` / `FAILURE_HANDOFF` / `OWNER_DECISION` / `SAME_SESSION` / `STOP` 之一开头；
+- 跨角色失败必须附完整可执行 `HANDOFF_PROMPT`；DANGER、BLOCKED 与 Owner 决策等待不得生成下游执行 Prompt；
+- Owner 决策检查点与 OwnerGate V1→V2 是同 Session 推进，不是跨 Session Handoff。
+
+其余（已完成的 Artifact、关键结论、非阻塞风险）只保留决策所需内容。Handoff 给「路线」，Git + Artifacts 给「事实」。Git 提交与 HANDOFF 的完成条件、七角色例外矩阵见 `.agent/specs/WorkflowGitLifecycle.md`。
 
 ---
 

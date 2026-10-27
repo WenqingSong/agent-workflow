@@ -496,16 +496,18 @@ class CiGeneratedArtifactIsolationTests(unittest.TestCase):
         # 真实 .cnb.yml：tag-guard -> release-context -> adoption-e2e
         release_tool = REPO / "scripts/release/release.py"
         commit = self.upstream_commit
-        run(["git", "-C", str(self.upstream), "tag", "-a", "v3.1.0", "-m", "ci order fixture"])
+        # Tag 必须跟随被测试仓库的真实 VERSION，不能写死某个历史版本。
+        tag = f"v{(self.upstream / '.agent' / 'VERSION').read_text(encoding='utf-8').strip()}"
+        run(["git", "-C", str(self.upstream), "tag", "-a", tag, "-m", "ci order fixture"])
         env = {key: value for key, value in os.environ.items() if not key.startswith("CNB_")}
-        env.update(CNB_BRANCH="v3.1.0", CNB_COMMIT=commit)
+        env.update(CNB_BRANCH=tag, CNB_COMMIT=commit)
         for args in (
             (
                 "guard",
                 "--repo",
                 ".",
                 "--tag",
-                "v3.1.0",
+                tag,
                 "--expected-commit",
                 commit,
                 "--expected-commit-source",
@@ -519,7 +521,7 @@ class CiGeneratedArtifactIsolationTests(unittest.TestCase):
                 "--repo",
                 ".",
                 "--tag",
-                "v3.1.0",
+                tag,
                 "--report",
                 "dist/reports/release-context.json",
                 "--json",

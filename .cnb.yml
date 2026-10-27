@@ -15,17 +15,17 @@ $:
             GOWORK=off go -C .agent/engine test ./...
 
 # ---------------------------------------------------------------------------
-# Workflow V3.1.0 发布流水线（tag_push）
+# Workflow V3.2.0 发布流水线（tag_push）
 #
 # 正式附件契约（P09 F1 修复后）：
 #   业务资产 7 项：
-#     workflow-check_3.1.0_linux_amd64
-#     workflow-check_3.1.0_linux_arm64
-#     workflow-check_3.1.0_darwin_arm64
-#     workflow-check_3.1.0_windows_amd64.exe
-#     agent-workflow-src-3.1.0.tar.gz
-#     agent-workflow-src-3.1.0.tar.gz.sha256
-#     agent-workflow-release-notes-3.1.0.md
+#     workflow-check_3.2.0_linux_amd64
+#     workflow-check_3.2.0_linux_arm64
+#     workflow-check_3.2.0_darwin_arm64
+#     workflow-check_3.2.0_windows_amd64.exe
+#     agent-workflow-src-3.2.0.tar.gz
+#     agent-workflow-src-3.2.0.tar.gz.sha256
+#     agent-workflow-release-notes-3.2.0.md
 #   校验元数据 2 项：
 #     SHA256SUMS
 #     version.json
@@ -35,7 +35,7 @@ $:
 #   Commit 绑定由归档顶层目录、MANIFEST.json、version.json 与二进制注入值承担。
 #
 # 安全模型（失败绝不产生错误的 GA / latest）：
-#   1. 只有 v3.1.0 这个精确 Tag 能触发；不使用 $ 兜底、不使用 v* 通配。
+#   1. 只有 v3.2.0 这个精确 Tag 能触发；不使用 $ 兜底、不使用 v* 通配。
 #   2. Tag 必须是 Annotated Tag，且 .agent/VERSION 与 Tag 一致，Commit 必须可解析。
 #   3. 预期 Commit 优先来自 CNB_COMMIT；缺失时用 Git 对 Tag 的真实解析结果，并在日志中明示。
 #   4. 先建 preRelease=true / latest=false，再上传 9 项附件。
@@ -49,15 +49,15 @@ $:
 #   - attachments 插件 DOWNLOAD 是否接受精确文件名列表（本流程不再使用 glob）。
 # 因此 promote 后重新上传（幂等）并重新下载核对，不依赖“退出码为 0”推断附件存在。
 # ---------------------------------------------------------------------------
-v3.1.0:
+v3.2.0:
   tag_push:
-    - name: release-v3.1.0
+    - name: release-v3.2.0
       runner:
         cpus: 8
       docker:
         image: golang:1.24
       env:
-        RELEASE_TAG: v3.1.0
+        RELEASE_TAG: v3.2.0
       stages:
         - name: toolchain-preflight
           script: |
@@ -169,8 +169,8 @@ v3.1.0:
         - name: create-pre-release
           type: git:release
           options:
-            title: Workflow V3.1.0
-            descriptionFromFile: dist/agent-workflow-release-notes-3.1.0.md
+            title: Workflow V3.2.0
+            descriptionFromFile: dist/agent-workflow-release-notes-3.2.0.md
             preRelease: true
             latest: false
             overlying: true
@@ -180,13 +180,13 @@ v3.1.0:
           settings:
             tag: $CNB_BRANCH
             attachments:
-              - "./dist/workflow-check_3.1.0_linux_amd64"
-              - "./dist/workflow-check_3.1.0_linux_arm64"
-              - "./dist/workflow-check_3.1.0_darwin_arm64"
-              - "./dist/workflow-check_3.1.0_windows_amd64.exe"
-              - "./dist/agent-workflow-src-3.1.0.tar.gz"
-              - "./dist/agent-workflow-src-3.1.0.tar.gz.sha256"
-              - "./dist/agent-workflow-release-notes-3.1.0.md"
+              - "./dist/workflow-check_3.2.0_linux_amd64"
+              - "./dist/workflow-check_3.2.0_linux_arm64"
+              - "./dist/workflow-check_3.2.0_darwin_arm64"
+              - "./dist/workflow-check_3.2.0_windows_amd64.exe"
+              - "./dist/agent-workflow-src-3.2.0.tar.gz"
+              - "./dist/agent-workflow-src-3.2.0.tar.gz.sha256"
+              - "./dist/agent-workflow-release-notes-3.2.0.md"
               - "./dist/SHA256SUMS"
               - "./dist/version.json"
 
@@ -195,7 +195,7 @@ v3.1.0:
           settings:
             type: DOWNLOAD
             tag: $CNB_BRANCH
-            attachments: "workflow-check_3.1.0_linux_amd64,workflow-check_3.1.0_linux_arm64,workflow-check_3.1.0_darwin_arm64,workflow-check_3.1.0_windows_amd64.exe,agent-workflow-src-3.1.0.tar.gz,agent-workflow-src-3.1.0.tar.gz.sha256,agent-workflow-release-notes-3.1.0.md,SHA256SUMS,version.json"
+            attachments: "workflow-check_3.2.0_linux_amd64,workflow-check_3.2.0_linux_arm64,workflow-check_3.2.0_darwin_arm64,workflow-check_3.2.0_windows_amd64.exe,agent-workflow-src-3.2.0.tar.gz,agent-workflow-src-3.2.0.tar.gz.sha256,agent-workflow-release-notes-3.2.0.md,SHA256SUMS,version.json"
 
         - name: verify-uploaded
           script: |
@@ -232,8 +232,8 @@ v3.1.0:
         - name: promote-ga
           type: git:release
           options:
-            title: Workflow V3.1.0
-            descriptionFromFile: dist/agent-workflow-release-notes-3.1.0.md
+            title: Workflow V3.2.0
+            descriptionFromFile: dist/agent-workflow-release-notes-3.2.0.md
             preRelease: false
             latest: false
             overlying: true
@@ -243,13 +243,13 @@ v3.1.0:
           settings:
             tag: $CNB_BRANCH
             attachments:
-              - "./dist/workflow-check_3.1.0_linux_amd64"
-              - "./dist/workflow-check_3.1.0_linux_arm64"
-              - "./dist/workflow-check_3.1.0_darwin_arm64"
-              - "./dist/workflow-check_3.1.0_windows_amd64.exe"
-              - "./dist/agent-workflow-src-3.1.0.tar.gz"
-              - "./dist/agent-workflow-src-3.1.0.tar.gz.sha256"
-              - "./dist/agent-workflow-release-notes-3.1.0.md"
+              - "./dist/workflow-check_3.2.0_linux_amd64"
+              - "./dist/workflow-check_3.2.0_linux_arm64"
+              - "./dist/workflow-check_3.2.0_darwin_arm64"
+              - "./dist/workflow-check_3.2.0_windows_amd64.exe"
+              - "./dist/agent-workflow-src-3.2.0.tar.gz"
+              - "./dist/agent-workflow-src-3.2.0.tar.gz.sha256"
+              - "./dist/agent-workflow-release-notes-3.2.0.md"
               - "./dist/SHA256SUMS"
               - "./dist/version.json"
 
@@ -258,7 +258,7 @@ v3.1.0:
           settings:
             type: DOWNLOAD
             tag: $CNB_BRANCH
-            attachments: "workflow-check_3.1.0_linux_amd64,workflow-check_3.1.0_linux_arm64,workflow-check_3.1.0_darwin_arm64,workflow-check_3.1.0_windows_amd64.exe,agent-workflow-src-3.1.0.tar.gz,agent-workflow-src-3.1.0.tar.gz.sha256,agent-workflow-release-notes-3.1.0.md,SHA256SUMS,version.json"
+            attachments: "workflow-check_3.2.0_linux_amd64,workflow-check_3.2.0_linux_arm64,workflow-check_3.2.0_darwin_arm64,workflow-check_3.2.0_windows_amd64.exe,agent-workflow-src-3.2.0.tar.gz,agent-workflow-src-3.2.0.tar.gz.sha256,agent-workflow-release-notes-3.2.0.md,SHA256SUMS,version.json"
 
         - name: verify-after-promote
           script: |
@@ -295,8 +295,8 @@ v3.1.0:
         - name: mark-latest
           type: git:release
           options:
-            title: Workflow V3.1.0
-            descriptionFromFile: dist/agent-workflow-release-notes-3.1.0.md
+            title: Workflow V3.2.0
+            descriptionFromFile: dist/agent-workflow-release-notes-3.2.0.md
             preRelease: false
             latest: true
             overlying: true
@@ -306,7 +306,7 @@ v3.1.0:
           settings:
             type: DOWNLOAD
             tag: $CNB_BRANCH
-            attachments: "workflow-check_3.1.0_linux_amd64,workflow-check_3.1.0_linux_arm64,workflow-check_3.1.0_darwin_arm64,workflow-check_3.1.0_windows_amd64.exe,agent-workflow-src-3.1.0.tar.gz,agent-workflow-src-3.1.0.tar.gz.sha256,agent-workflow-release-notes-3.1.0.md,SHA256SUMS,version.json"
+            attachments: "workflow-check_3.2.0_linux_amd64,workflow-check_3.2.0_linux_arm64,workflow-check_3.2.0_darwin_arm64,workflow-check_3.2.0_windows_amd64.exe,agent-workflow-src-3.2.0.tar.gz,agent-workflow-src-3.2.0.tar.gz.sha256,agent-workflow-release-notes-3.2.0.md,SHA256SUMS,version.json"
 
         - name: verify-after-latest
           script: |

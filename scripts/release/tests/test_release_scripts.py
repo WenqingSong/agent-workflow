@@ -29,18 +29,19 @@ from pathlib import Path
 SOURCE_REPO = Path(__file__).resolve().parents[3]
 RELEASE_TOOL = SOURCE_REPO / "scripts" / "release" / "release.py"
 PIPELINE_CONFIG = SOURCE_REPO / ".cnb.yml"
-TAG = "v3.1.0"
-VERSION = "3.1.0"
+# 版本从仓库真实来源读取：测试随 VERSION 升级，不把 Tag 写死在断言里。
+VERSION = (SOURCE_REPO / ".agent" / "VERSION").read_text(encoding="utf-8").strip()
+TAG = f"v{VERSION}"
 FORMAL_REPO = "https://cnb.cool/framework-station/agent-workflow"
 TEST_REPO = "https://cnb.cool/fixture-station/agent-workflow-rc"
 BINARIES = (
-    "workflow-check_3.1.0_linux_amd64",
-    "workflow-check_3.1.0_linux_arm64",
-    "workflow-check_3.1.0_darwin_arm64",
-    "workflow-check_3.1.0_windows_amd64.exe",
+    f"workflow-check_{VERSION}_linux_amd64",
+    f"workflow-check_{VERSION}_linux_arm64",
+    f"workflow-check_{VERSION}_darwin_arm64",
+    f"workflow-check_{VERSION}_windows_amd64.exe",
 )
-NOTES_ASSET = "agent-workflow-release-notes-3.1.0.md"
-DIST_ASSET = "agent-workflow-src-3.1.0.tar.gz"
+NOTES_ASSET = f"agent-workflow-release-notes-{VERSION}.md"
+DIST_ASSET = f"agent-workflow-src-{VERSION}.tar.gz"
 DIST_SHA_ASSET = f"{DIST_ASSET}.sha256"
 METADATA_ASSETS = ("SHA256SUMS", "version.json")
 BUSINESS_ASSETS = (*BINARIES, DIST_ASSET, DIST_SHA_ASSET, NOTES_ASSET)
@@ -595,7 +596,7 @@ class CommitBindingTests(unittest.TestCase):
             "--json",
         )
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("Tag v3.1.0 解析出的 Commit", proc.stdout)
+        self.assertIn(f"Tag {TAG} 解析出的 Commit", proc.stdout)
 
     def test_self_reported_commit_cannot_satisfy_binding(self) -> None:
         """version.json 自报另一个 Commit 时，用它当 --commit 也必须被 Tag 绑定拒绝。"""
@@ -621,7 +622,7 @@ class CommitBindingTests(unittest.TestCase):
             "--json",
         )
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("Tag v3.1.0 解析出的 Commit", proc.stdout)
+        self.assertIn(f"Tag {TAG} 解析出的 Commit", proc.stdout)
 
     def test_verify_uploaded_requires_explicit_commit(self) -> None:
         out, manifest = make_snapshot(self.assets, self.tmp)
@@ -1023,7 +1024,7 @@ class PipelineConfigTests(unittest.TestCase):
     def test_download_glob_fails(self) -> None:
         config = self.mutate(
             "redownload-after-latest",
-            "agent-workflow-src-3.1.0.tar.gz",
+            DIST_ASSET,
             "agent-workflow-src-*.tar.gz",
         )
         proc = self.check(config)

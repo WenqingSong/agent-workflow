@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Workflow V3.1.0 release engineering tool.
+"""Workflow V3.2.0 release engineering tool.
 
 职责边界：
 
@@ -115,10 +115,14 @@ REQUIRED_DIST_PATHS = (
     ".agent/roles/OwnerGateAgent.md",
     ".agent/roles/DelivererAgent.md",
     ".agent/specs/WorkflowAgentDirective.md",
+    ".agent/specs/WorkflowRouteSelection.md",
     ".agent/specs/WorkflowLoopCircuitBreaker.md",
+    ".agent/specs/WorkflowHandoffContract.md",
+    ".agent/specs/WorkflowGitLifecycle.md",
     ".agent/specs/AgentCollaborationSpecification.md",
     ".agent/specs/Five-AgentResponsibilityBoundary.md",
     ".agent/specs/WorkflowAdoption.md",
+    ".agent/specs/tools/git-lifecycle-check",
     ".agent/adoption/workflow-adoption",
     ".agent/adoption/workflow_adoption.py",
     ".agent/engine/go.mod",
@@ -132,6 +136,32 @@ REQUIRED_DIST_PATHS = (
     ".agent/templates/registry/registry.template.md",
     "docs/design/agent-workflow.md",
 )
+
+# 七角色固定清单：数量变化必须是有意的规范变更，而不是新增文件被漏数。
+REQUIRED_ROLES = (
+    ".agent/roles/TaskBuilderPrompt.md",
+    ".agent/roles/AnalystAgent.md",
+    ".agent/roles/ArchitectAgent.md",
+    ".agent/roles/CoderAgent.md",
+    ".agent/roles/CleanerAgent.md",
+    ".agent/roles/OwnerGateAgent.md",
+    ".agent/roles/DelivererAgent.md",
+)
+
+# Specs 顶层规范完整清单（V3.2.0）。新增 / 删除规范必须同步这里与 PACKAGE_MANIFEST。
+REQUIRED_SPECS = (
+    ".agent/specs/WorkflowAgentDirective.md",
+    ".agent/specs/WorkflowRouteSelection.md",
+    ".agent/specs/WorkflowLoopCircuitBreaker.md",
+    ".agent/specs/WorkflowHandoffContract.md",
+    ".agent/specs/WorkflowGitLifecycle.md",
+    ".agent/specs/AgentCollaborationSpecification.md",
+    ".agent/specs/Five-AgentResponsibilityBoundary.md",
+    ".agent/specs/WorkflowAdoption.md",
+)
+
+# specs/tools 只允许一个只读自检工具，且必须保持可执行位（100755）。
+SPEC_TOOL_PATH = ".agent/specs/tools/git-lifecycle-check"
 
 # 正式源码包绝不能包含的内容（宿主数据、运行时证据、Git 历史）。
 FORBIDDEN_DIST_PATHS = (
@@ -1189,11 +1219,27 @@ def verify_distribution(
         failures.append(f"分发包内 {VERSION_FILE} 与 {version} 不一致")
 
     roles = sorted(p for p in members if p.startswith(".agent/roles/"))
-    specs = sorted(p for p in members if p.startswith(".agent/specs/"))
-    if len(roles) != 7:
+    specs = sorted(p for p in members if p.startswith(".agent/specs/") and p.endswith(".md"))
+    specs_in_tools = sorted(
+        p for p in members if p.startswith(".agent/specs/tools/") and not p.endswith("/")
+    )
+    if len(roles) != len(REQUIRED_ROLES):
         failures.append(f"七角色不完整：实际 {len(roles)} 个角色文件 {roles}")
-    if len(specs) != 5:
-        failures.append(f"Specs 不完整：实际 {len(specs)} 个 {specs}")
+    missing_specs = sorted(set(REQUIRED_SPECS) - set(specs))
+    if missing_specs:
+        failures.append(f"Specs 不完整：缺少 {missing_specs}（实际 {len(specs)} 个）")
+    extra_specs = sorted(set(specs) - set(REQUIRED_SPECS))
+    if extra_specs:
+        failures.append(f"Specs 出现未登记规范（需更新 REQUIRED_SPECS）：{extra_specs}")
+    if specs_in_tools != [SPEC_TOOL_PATH]:
+        failures.append(f"Specs 工具目录必须只含 {SPEC_TOOL_PATH}，实际 {specs_in_tools}")
+
+    # 工具必须保持可执行位：模式来自 Git index，归档与 MANIFEST 必须一致。
+    tool_entry = members.get(SPEC_TOOL_PATH)
+    if tool_entry is None:
+        failures.append(f"分发包缺少只读自检工具: {SPEC_TOOL_PATH}")
+    elif not (tool_entry[1] & 0o111):
+        failures.append(f"{SPEC_TOOL_PATH} 必须可执行（mode 100755），实际 mode={oct(tool_entry[1])}")
 
     report = {
         "status": "PASS" if not failures else "FAIL",
@@ -2316,7 +2362,7 @@ def cmd_repro(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="release.py", description="Workflow V3.1.0 release engineering tool")
+    parser = argparse.ArgumentParser(prog="release.py", description="Workflow V3.2.0 release engineering tool")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_guard = sub.add_parser("guard", help="Tag / Annotated / Commit / VERSION 守卫")
