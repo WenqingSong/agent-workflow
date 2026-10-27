@@ -329,7 +329,7 @@ def filter_own_output(lines: list[str], rel_output: str) -> list[str]:
     return kept
 
 
-def require_clean(repo: Path, output: Path) -> None:
+def require_clean(repo: Path, output: Path, ignore: tuple[str, ...] = ()) -> None:
     try:
         rel_output = output.resolve().relative_to(repo.resolve()).as_posix()
     except ValueError:
@@ -337,6 +337,8 @@ def require_clean(repo: Path, output: Path) -> None:
     lines = repo_status_lines(repo)
     if rel_output:
         lines = filter_own_output(lines, rel_output)
+    for path in ignore:
+        lines = filter_own_output(lines, path.strip("/"))
     if lines:
         raise ReleaseError(
             "SOURCE_DIRTY",
@@ -455,7 +457,7 @@ def cmd_build(args: argparse.Namespace) -> int:
             "HEAD_NOT_AT_TAG",
             f"HEAD {guard['head_commit']} 不等于 Tag {tag} 指向的 {commit}；发布构建必须从该 Commit 进行",
         )
-    require_clean(repo, output)
+    require_clean(repo, output, tuple(getattr(args, "ignore", ()) or ()))
 
     output.mkdir(parents=True, exist_ok=True)
     reports_dir = output / "reports"
@@ -1268,7 +1270,11 @@ def cmd_repro(args: argparse.Namespace) -> int:
             if target.exists():
                 shutil.rmtree(target)
             ns = argparse.Namespace(
-                repo=str(repo), output=str(target), tag=args.tag, json=False
+                repo=str(repo),
+                output=str(target),
+                tag=args.tag,
+                json=False,
+                ignore=list(getattr(args, "ignore", ()) or ()),
             )
             code = cmd_build(ns)
             if code != EXIT_OK:
@@ -1329,6 +1335,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--repo", required=True)
     p_build.add_argument("--output", required=True)
     p_build.add_argument("--tag", required=True)
+    p_build.add_argument(
+        "--ignore",
+        action="append",
+        default=["dist"],
+        help="构建前允许存在的未跟踪输出目录（默认 dist）",
+    )
     p_build.add_argument("--json", action="store_true")
     p_build.set_defaults(func=cmd_build)
 
@@ -1373,6 +1385,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_repro.add_argument("--repo", required=True)
     p_repro.add_argument("--tag", required=True)
     p_repro.add_argument("--workdir")
+    p_repro.add_argument("--ignore", action="append", default=["dist"])
     p_repro.add_argument("--keep", action="store_true")
     p_repro.add_argument("--report")
     p_repro.add_argument("--json", action="store_true")
