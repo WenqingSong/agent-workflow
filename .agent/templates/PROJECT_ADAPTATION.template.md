@@ -152,7 +152,7 @@ Validation:
 ## 8. Verification
 
 - Workflow Design
-- Workflow Agent Directive（`.agent/specs/WorkflowAgentDirective.md` 存在，六个 Role Prompt 显式读取）
+- Workflow Agent Directive（`.agent/specs/WorkflowAgentDirective.md` 存在，七个 Role Prompt（含 `ArchitectAgent.md`）显式读取）
 - Legacy directive entry（不存在指向已删除 `AGENTS.template.md` 的有效入口）
 - Agent Prompts
 - Task templates

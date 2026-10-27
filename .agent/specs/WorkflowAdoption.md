@@ -530,8 +530,8 @@ Workflow Role 在该文件存在时读取其中的宿主业务规范；不存在
 
 **Workflow structure**
 
-- 六角色 Prompt 存在；
-- `.agent/specs/WorkflowAgentDirective.md` 存在，且六个 Role Prompt 都显式要求读取它；
+- 七个 Role Prompt 存在（`TaskBuilderPrompt.md`、`AnalystAgent.md`、`ArchitectAgent.md`、`CoderAgent.md`、`CleanerAgent.md`、`OwnerGateAgent.md`、`DelivererAgent.md`）；
+- `.agent/specs/WorkflowAgentDirective.md` 存在，且七个 Role Prompt 都显式要求读取它；
 - 不存在指向已删除模板 `AGENTS.template.md` 的有效入口；
 - Workflow Design 存在（宿主可按 Owner 决策保留或引用）；
 - task/template 结构完整；

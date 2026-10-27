@@ -22,7 +22,7 @@ Workflow 专用指令入口：`specs/WorkflowAgentDirective.md`
 
 ## Structure
 
-- `roles/` — 六个独立 Agent Role Prompt
+- `roles/` — 七个独立 Agent Role Prompt（`NORMAL` / `COMPLEX` 的六个角色 + `ARCHITECT` 的 Architect）
 - `specs/` — Workflow Agent Directive（Workflow 专用入口）、协作协议、Authority / Responsibility Boundary、Project Adoption / 安装 / 升级
 - `templates/` — Workflow / Adoption / upstream provenance 模板
 - `adoption/` — 轻量 Source Distribution / install / upgrade / verify / restore 工具

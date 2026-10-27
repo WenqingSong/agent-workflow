@@ -20,6 +20,15 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 TOOL = REPO / ".agent/adoption/workflow-adoption"
+ROLE_PROMPTS = (
+    "TaskBuilderPrompt.md",
+    "AnalystAgent.md",
+    "ArchitectAgent.md",
+    "CoderAgent.md",
+    "CleanerAgent.md",
+    "OwnerGateAgent.md",
+    "DelivererAgent.md",
+)
 FORBIDDEN_PACKAGE_PARTS = (
     "/.git/",
     "/.agent/workflow.yaml",
@@ -265,7 +274,9 @@ class DistributionContractTests(unittest.TestCase):
                 self.assertNotIn(forbidden, "/" + name)
         self.assertIn(f"agent-workflow-src-{self.commit[:12]}/MANIFEST.json", names)
         self.assertIn(f"agent-workflow-src-{self.commit[:12]}/README.md", names)
-        self.assertIn(f"agent-workflow-src-{self.commit[:12]}/.agent/roles/AnalystAgent.md", names)
+        for role in ROLE_PROMPTS:
+            self.assertIn(f"agent-workflow-src-{self.commit[:12]}/.agent/roles/{role}", names, role)
+            self.assertIn(f".agent/roles/{role}", manifest["install"]["managed"], role)
         self.assertIn(f"agent-workflow-src-{self.commit[:12]}/.agent/engine/go.mod", names)
         self.assertNotIn(f"agent-workflow-src-{self.commit[:12]}/.agent/tasks/x/state.yaml", names)
 
@@ -370,6 +381,8 @@ class InstallE2ETests(unittest.TestCase):
         self.assertTrue((host / ".agent/bin/workflow-check").is_file())
         self.assertFalse((host / ".agent/registry").exists())
         self.assertFalse((host / ".agent/tasks").exists())
+        installed_roles = sorted(p.name for p in (host / ".agent/roles").glob("*.md"))
+        self.assertEqual(installed_roles, sorted(ROLE_PROMPTS))
         config = (host / ".agent/workflow.yaml").read_text(encoding="utf-8")
         self.assertIn('integration_branch: "release/integration"', config)
         self.assertIn("resources: {}", config)
