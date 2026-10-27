@@ -342,10 +342,10 @@ Gate FAIL 不要求为了「记录失败」而额外 commit；但不得删除、
 | `SRC-04` | `STRICT_REQUIREMENT_CONFLICT` | ARCHITECT V1 的 CLEAN 早于 OwnerGate 整体完成 | V1 必须先持久化 CLEAN，V2 才能取得 Owner 决策；两阶段之间不能合并 | V1 / V2 分两次 `ROLE_ARTIFACT` 出站；V1 明确不是 Owner 接受 | 已定义；不能合并提交，否则 `review.target` 与 Owner 决策对象失配 |
 | `SRC-05` | `STRICT_REQUIREMENT_CONFLICT` | TaskBuilder Bootstrap 在无交付前提交 | 任务边界与初始状态必须先成为 Git 事实，下游才能开始 | 归类 `BOOTSTRAP`，只含任务目录；NORMAL 仍需 `coder-start`，COMPLEX/ARCHITECT 只读同步自检 | 已定义；无 Gate 可用是既有设计 |
 | `SRC-06` | `STRICT_REQUIREMENT_CONFLICT` | 失败 / 拒绝 / CHANGES_REQUIRED 证据提交 | 工作未完成时仍需提交负面结论，否则下一 Session 无法恢复 | 归类 `ROLE_ARTIFACT` 或 `FORCED_EVIDENCE`；只含本角色证据与状态；禁止写成成功 | 已定义；不得为了「只在完成后提交」而丢弃失败证据 |
-| `SRC-07` | `SPEC_ONLY` | Engine 的 `handoffReady` 只比较本地 remote-tracking ref | 若远端被他人推进，本地 `origin/<branch>` 可能陈旧，Gate 会在远端已变化时 PASS | 自检工具改用 `git ls-remote`（§12）；Engine 不改（本轮禁止修改 Go Engine） | 已披露，不在本阶段修 Engine |
+| `SRC-07` | `SPEC_ONLY` | Engine 的 `handoffReady` 只比较本地 remote-tracking ref | 若远端被他人推进，本地 `origin/<branch>` 可能陈旧，Gate 会在远端已变化时 PASS | 自检工具改用 `git ls-remote`（§12）；Engine 的 `handoffReady` 语义保持 V3.1.0 不变（V3.2.0 只新增路线不变量） | 已披露；`verify-remote` 与 `handoff-check` 用真实远端补足，Gate 自身仍可能误 PASS |
 | `SRC-08` | `SPEC_ONLY` | 直接 `git commit` / `git push` 无法被 Engine 阻止 | 只读 Validator 不拦截写操作，协议无法阻止恶意或误操作 | 用 Gate + 真实 Git 证据识别错误 HANDOFF；不增加 Hook / 全局配置 | 不宣称机器强制 |
-| `SRC-09` | `OPEN_DEPENDENCY` | TaskBuilder 角色 Prompt 的必读列表与 Directive §4 不一致 | Directive 要求包括 TaskBuilder 在内的所有角色读取 DANGER 规范；TaskBuilder 自身 Prompt 未列该项 | 统一入口固定在 Directive §4；TaskBuilder Prompt 由 Agent A 在同一阶段修正 | AUDIT-02 残留；本 Agent 不编辑该文件 |
-| `SRC-10` | `PENDING_INTEGRATION` | `.agent/specs/WorkflowHandoffContract.md` 由 Agent B 提供 | 本独立分支不包含该文件；若 Role 在缺失时自行发明 Handoff 字段，会形成第二套契约 | Directive 明确引用该路径；缺失时不得自行发明，按 `BLOCKED`（`HANDOFF_CONTRACT_ABSENT`）处理 | 第二阶段必须核验文件存在 |
+| `SRC-09` | `CLOSED` | TaskBuilder 角色 Prompt 的必读列表与 Directive §4 不一致 | Directive 要求包括 TaskBuilder 在内的所有角色读取 DANGER / Handoff / Git 规范；TaskBuilder 自身 Prompt 原本只列 4 项 | 统一入口固定在 Directive §4；TaskBuilder Prompt 已列出全部 7 项（含路线选择规范） | V3.2.0 第二阶段集成已关闭；`test_git_lifecycle.py` 的 `RoleWiringTest` 与 `test_handoff_contract.py` 覆盖 |
+| `SRC-10` | `CLOSED` | `.agent/specs/WorkflowHandoffContract.md` 由 Agent B 提供 | 独立分支不包含该文件；缺失时若 Role 自行发明 Handoff 字段会形成第二套契约 | Directive 明确引用该路径；缺失时不得自行发明，按 `BLOCKED`（`HANDOFF_CONTRACT_ABSENT`）处理 | V3.2.0 第二阶段已核验文件存在、进入 Distribution 必需成员，并接入七个角色 |
 
 ## 12. Git 前置 / 后置自检（SPEC_ONLY）
 
@@ -360,7 +360,7 @@ Gate FAIL 不要求为了「记录失败」而额外 commit；但不得删除、
 | 子命令 | 用途 | 关键检查 |
 |---|---|---|
 | `preflight --role <Role> --task <task>` | 开工前 | 非 detached；工作区 clean；无遗留 staged；当前分支不是 `main` / `master` / integration（TaskBuilder bootstrap 例外）；`origin` 存在 |
-| `commit-check --role <Role> --task <task> --mode <MODE> [--phase v1\|v2]` | Commit 前 | staged 路径是否属于该 `MODE` 的白名单；`METADATA` 是否只含 `state.yaml`；`EVIDENCE` 是否混入 `state.yaml`；`FORCED_EVIDENCE` / `REGISTRY_ONLY` 是否越界；引用字段是否为完整 SHA / 可解析；`OwnerGate` 必须用 `--phase` 区分 V1/V2 |
+| `commit-check --role <Role> --task <task> --mode <MODE> [--phase v1\|v2]` | Commit 前 | staged 路径是否属于该 `MODE` 的白名单；`METADATA` 是否只含 `state.yaml`；`EVIDENCE` 是否混入 `state.yaml`；`FORCED_EVIDENCE` / `REGISTRY_ONLY` 是否越界；引用字段是否为完整 SHA / 可解析；`OwnerGate` 必须用 `--phase` 区分 V1/V2；**本角色 scope 内不得残留未暂存/未跟踪文件**（其他角色的无关修改按 §3.3 保留，不阻断提交，也不得被提交） |
 | `push-check --role <Role> --task <task> [--mode normal\|registry] [--expect-branch <name>]` | Push 前 | 目标分支不是 `main` / `master` / integration（Analyst `REGISTRY_ONLY` 例外）；可选核对当前分支 == 任务分支；不处于 detached |
 | `verify-remote --task <task> [--branch <name>] [--expect-sha <sha>]` | Push 后 | `git ls-remote` 的实际远端 SHA == 本地 HEAD；本地 remote-tracking ref 是否陈旧 |
 | `handoff-check --role <Role> --task <task> [--gate <gate>]` | HANDOFF 前 | 工作区 clean；远端 SHA == 本地 HEAD；`state.yaml` 无 `blocked.active=true`；可选：要求指定 Gate `PASS` |

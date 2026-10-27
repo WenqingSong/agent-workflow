@@ -69,7 +69,7 @@
 - 路线选择不等于免除审批：`COMPLEX` / `ARCHITECT` 的 Contract、范围与关键业务决定仍由 Owner 批准；TaskBuilder 不批准 Contract，也不替 Analyst 设计方案；
 - 只有 Owner 可以要求改变已记录的路线（见 §6）。
 
-过渡期说明：`AgentCollaborationSpecification.md` §5 中「Owner 指定路线与基线」的表述属于 V3.1.0 文本，本规范在**路线决策权**上取代该表述；其余语义（角色序列、Gate、证据）不变。该文件的正式措辞由第二阶段统一集成负责，本任务不修改它。
+集成状态：`AgentCollaborationSpecification.md` §5 已在 V3.2.0 第二阶段统一为「TaskBuilder 判定路线（TB-ROUTE-1），Owner 指定的路线是硬约束」。两份规范在路线决策权上不再有分歧；角色序列、Gate 与证据语义未变。
 
 ## 5. 路线事实（Route Authority）
 
@@ -113,7 +113,7 @@ task_id: <task-slug>
 Engine 可验证的部分（见 §7 的 R-4）：
 
 - Contract Approval 所在 commit 记录的路线必须仍是当前路线。只改 `route` 字段而不重新审批，会使 `contract.target` 指向旧路线证据，Engine 直接拒绝；
-- `ARCHITECT` 的 `review.target` 必须包含 `architecture.md`；含 `architecture.md` 的快照不得作为 `COMPLEX` / `NORMAL` 的 Review 证据。
+- `ARCHITECT` 的 `review.target` 必须包含 `architecture.md`；`COMPLEX` / `NORMAL` 的 `review.target` 不得是**自身改写或引入** `architecture.md` 的结构交付快照。仅仅继承了历史 `architecture.md` 的实现快照是合法的：路线变更后不会自动删除该文件，Engine 不能把「文件存在」误判为「快照就是结构证据」。
 
 Engine 无法验证的部分见 §9。
 
@@ -127,7 +127,7 @@ Engine（`.agent/engine`，`workflow-check`）是只读校验器。V3.2.0 新增
 | R-2 | 路线 ↔ Contract 状态 | `NORMAL` 不得携带 `PENDING` / `APPROVED` / `REJECTED`；`COMPLEX` / `ARCHITECT` 不得 `NOT_REQUIRED` | `Route Contract (R-2)` |
 | R-3 | 路线 ↔ `task.md` | `state.route` 必须等于 `## Complexity` 的唯一声明 | `Route Task Document (R-3)` |
 | R-4a | 路线 ↔ Contract Approval 证据 | `contract.target` 的 `state.yaml` 记录的 `route` 必须等于当前 `route`；无记录即拒绝 | `Route Contract Evidence (R-4a)` |
-| R-4b | 路线 ↔ Review 证据形态 | `ARCHITECT` 的 `review.target` 必须含 `architecture.md`；其他路线不得含 | `Route Review Evidence (R-4b)` |
+| R-4b | 路线 ↔ Review 证据形态 | `ARCHITECT` 的 `review.target` 必须含 `architecture.md`；其他路线的 `review.target` **自身不得改写/引入** `architecture.md` | `Route Review Evidence (R-4b)` |
 
 生效点：
 
@@ -180,6 +180,8 @@ Engine 不声称「通过 Gate 就机器认证了 Architect Session」或「Appr
 | `ARCHITECT` + `NOT_REQUIRED` 拒绝 | `TestRouteArchitectNotRequiredRejected` |
 | `route` 与 `task.md` 不一致拒绝 | `TestRouteTaskDocumentMismatchRejected`、`TestParseComplexity` |
 | 非法路线 / 未授权降级 | `TestRouteIllegalValueRejected`、`TestRouteDowngradeCannotReuseApproval`、`TestRouteStructuralSnapshotNotReusable`、`TestRouteArchitectReviewRequiresStructuralSnapshot` |
+| 合法路线变更后重新审批 | `TestRouteChangeWithReapprovalPasses` |
+| 仅继承历史 `architecture.md` 的实现快照不被误拒绝 | `TestRouteComplexSnapshotInheritingArchitectureAllowed`、`TestRouteComplexSnapshotTouchingArchitectureRejected` |
 | 历史 State 兼容 | `TestRouteLegacyStateCompatible` |
 | 原有 Gate 回归 | `TestRouteArchitectFullGateSequence` 与既有 NORMAL / COMPLEX / ARCHITECT 测试全集 |
 | CLI 自检语义 | `TestRunRoutePass`、`TestRunRouteContractMismatch`、`TestRunRouteDocumentMismatch`、`TestRunRouteIllegalValue`、`TestRunRouteLegacy`、`TestRunRouteUsageErrors`、`TestRunRouteNonV2State` |
@@ -187,9 +189,7 @@ Engine 不声称「通过 Gate 就机器认证了 Architect Session」或「Appr
 ## 11. 不做的事
 
 - 不新增 Gate，不修改五个 Gate 的语义；
-- 不修改其他六个 Role Prompt、`AgentCollaborationSpecification.md`、`Five-AgentResponsibilityBoundary.md`、`WorkflowAgentDirective.md`、`WorkflowLoopCircuitBreaker.md`；
-- 不修改其他 Agent 负责的 Handoff / Git Lifecycle 规范；
-- 不升级 `state.yaml` schema 版本；
+- 不新增第八个角色、不新增第四条路线、不升级 `state.yaml` schema 版本；
 - 不声称 Engine 具备身份认证能力。
 
-`docs/design/agent-workflow.md` 的 `state.yaml` 数据模型与 `.agent/README.md` 的命令清单尚未列出 `route` / `workflow-check route`：这两个文件不在本任务的独占修改范围内，文档同步留给第二阶段统一集成。本规范是当前路线事实、判定规则与 Engine 能力的权威说明。
+集成状态：本规范在 V3.2.0 第二阶段被接入 `.agent/specs/WorkflowAgentDirective.md` §4（必读清单第 4 项）、七个角色 Prompt、`docs/design/agent-workflow.md` 与 `.agent/README.md`；`AgentCollaborationSpecification.md` 的路线决策权措辞已统一。本规范是当前路线事实、判定规则与 Engine 能力的权威说明。

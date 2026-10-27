@@ -46,17 +46,18 @@ Role 开始工作前，必须按顺序**显式读取**：
 1. 本文件 `.agent/specs/WorkflowAgentDirective.md`；
 2. 自身角色 Prompt：`.agent/roles/<Role>.md`；
 3. `.agent/specs/AgentCollaborationSpecification.md`（协作规范）与 `.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）；
-4. `.agent/specs/WorkflowLoopCircuitBreaker.md`（循环熔断：两轮预算、账本、DANGER 停机与 Owner 恢复）；
-5. `.agent/specs/WorkflowHandoffContract.md`（跨 Session HANDOFF 的最小字段与格式契约；见 §5 的缺失处理）；
-6. `.agent/specs/WorkflowGitLifecycle.md`（Stage / Commit / Push / Gate / HANDOFF 的时机与完成条件）；
-7. 当前 Task 事实：`.agent/tasks/<task-slug>/` 下的 `task.md`、`state.yaml`、`contract.md`、`loop-ledger.md`、`danger-report.md` 等；
-8. 宿主根 `AGENTS.md`：**存在时读取并遵守**其中的宿主业务规范；**不存在时继续**，不创建、不阻断。
+4. `.agent/specs/WorkflowRouteSelection.md`（路线事实：`NORMAL` / `COMPLEX` / `ARCHITECT` 的判定权、`state.yaml.route` 与 Engine 校验）；
+5. `.agent/specs/WorkflowLoopCircuitBreaker.md`（循环熔断：两轮预算、账本、DANGER 停机与 Owner 恢复）；
+6. `.agent/specs/WorkflowHandoffContract.md`（跨 Session HANDOFF 的最小字段与格式契约；见 §5 的缺失处理）；
+7. `.agent/specs/WorkflowGitLifecycle.md`（Stage / Commit / Push / Gate / HANDOFF 的时机与完成条件，以及只读自检工具）；
+8. 当前 Task 事实：`.agent/tasks/<task-slug>/` 下的 `task.md`、`state.yaml`、`contract.md`、`loop-ledger.md`、`danger-report.md` 等；
+9. 宿主根 `AGENTS.md`：**存在时读取并遵守**其中的宿主业务规范；**不存在时继续**，不创建、不阻断。
 
-**本节是唯一权威必读清单。** 角色 Prompt 中的清单只是摘要；任何未列出的项目仍以本节为准，不得解释为可以跳过本节第 4～6 项。
+**本节是唯一权威必读清单。** 角色 Prompt 中的清单只是摘要；任何未列出的项目仍以本节为准，不得解释为可以跳过本节第 4～7 项。
 
 不得依据旧路径 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。
 
-**全部已激活的 Workflow Role（包括 TaskBuilder）都必须读取第 4 项。** TaskBuilder 的 DANGER 约束经由本 Directive 加载，其角色 Prompt 不重复定义熔断计数；TaskBuilder 自身 Prompt 的必读清单与本清单不一致属于 AUDIT-02 残留，由 Agent A 在该文件内修正，本 Agent 不编辑该文件（见 `.agent/specs/WorkflowGitLifecycle.md` §11 `SRC-09`）。
+**全部已激活的 Workflow Role（包括 TaskBuilder）都必须读取第 4～7 项。** TaskBuilder 的路线判定、DANGER 约束与 Git 出站条件分别经由路线选择、循环熔断与 Git Lifecycle 规范加载，其角色 Prompt 不重复定义这些判定。V3.2.0 第二阶段已消除 TaskBuilder 必读清单与本节的历史差异（原 `SRC-09` / `AUDIT-02` 残留，见 `.agent/specs/WorkflowGitLifecycle.md` §11）。
 
 循环熔断规范是 **Agent 行为协议**：`workflow-check` 不解析账本，无法证明 append-only、无法计算机轮次。不要把它描述为机器级限流；它唯一的机器事实支撑是 `blocked.active=true` 时五个 Gate 一律拒绝，以及两个证据文件在当前 Task 根目录内属于 Neutral Tail。
 
@@ -66,7 +67,8 @@ Role 开始工作前，必须按顺序**显式读取**：
 - 自身角色 Prompt 缺失 → 同样 `BLOCKED`。
 - `.agent/specs/WorkflowLoopCircuitBreaker.md` 缺失或不可读 → 同样 `BLOCKED`；**不得**在缺失时开展需要熔断治理的 Workflow 操作，包括请求 Owner 决定、跨角色退回、Contract 修订、DANGER 判定与恢复。不得凭记忆重建轮次。
 - `.agent/specs/WorkflowGitLifecycle.md` 缺失或不可读 → 同样 `BLOCKED`；**不得**在缺失时进行 Stage、Commit、Push 或 HANDOFF。不得凭记忆或历史习惯重建提交时机。
-- `.agent/specs/WorkflowHandoffContract.md` 缺失或不可读 → 输出 `BLOCKED` 并标注 `HANDOFF_CONTRACT_ABSENT`；**不得**自行发明第二套 HANDOFF 字段，也不得把「口头交接」当作契约已满足。该文件由 Agent B 提供，V3.2.0 第二阶段集成必须核验其存在（见 `.agent/specs/WorkflowGitLifecycle.md` §11 `SRC-10`）。
+- `.agent/specs/WorkflowHandoffContract.md` 缺失或不可读 → 输出 `BLOCKED` 并标注 `HANDOFF_CONTRACT_ABSENT`；**不得**自行发明第二套 HANDOFF 字段，也不得把「口头交接」当作契约已满足。该文件在 V3.2.0 集成中已核验存在并被 Distribution 收录（见 `.agent/specs/WorkflowGitLifecycle.md` §11 `SRC-10`）。
+- `.agent/specs/WorkflowRouteSelection.md` 缺失或不可读 → 同样 `BLOCKED`；**不得**凭记忆或历史习惯决定路线，也不得因此默认 `NORMAL`。路线判定规则、`state.yaml.route` 与 Engine 校验只在路线规范中定义。
 - 宿主根 `AGENTS.md` 缺失 → 不阻断；它只是可选的宿主业务规范。
 - 本文件与角色 Prompt 冲突时 → `BLOCKED` 并说明冲突点，由 Owner 决定，不自行选择更宽松的一方。
 
@@ -104,6 +106,7 @@ Role 认为继续执行会违反自身职责或安全约束时，输出 `BLOCKED
 | 本 Directive（Workflow 专用入口） | `.agent/specs/WorkflowAgentDirective.md` |
 | 协作规范 | `.agent/specs/AgentCollaborationSpecification.md` |
 | 职责边界 | `.agent/specs/Five-AgentResponsibilityBoundary.md` |
+| 路线事实（`NORMAL` / `COMPLEX` / `ARCHITECT` 判定与 `route` 校验） | `.agent/specs/WorkflowRouteSelection.md` |
 | 循环熔断（两轮预算 / 账本 / DANGER / Owner 恢复） | `.agent/specs/WorkflowLoopCircuitBreaker.md` |
 | 跨 Session HANDOFF 字段与格式（Agent B 提供） | `.agent/specs/WorkflowHandoffContract.md` |
 | Git Lifecycle（Stage / Commit / Push / Gate / HANDOFF 时机） | `.agent/specs/WorkflowGitLifecycle.md` |

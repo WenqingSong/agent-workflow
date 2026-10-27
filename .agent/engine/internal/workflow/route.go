@@ -235,8 +235,11 @@ func (v *Validator) routeApprovalAgrees(taskSlug string, s State) Result {
 
 // routeReviewEvidenceAgrees 实现 R-4b：Review 证据形态必须与路线匹配。
 //
-// ARCHITECT 的 D1 必须包含 architecture.md；反过来，含 architecture.md 的快照
-// 是 ARCHITECT 结构快照的特征，不得作为 COMPLEX / NORMAL 的 Review 证据。
+// ARCHITECT 的 D1 必须包含 architecture.md。
+//
+// 反向不成立：仅仅「树里含 architecture.md」不足以证明该快照是结构交付快照。
+// COMPLEX / NORMAL 只在 review.target 自身改写了 architecture.md 时拒绝，
+// 见函数体内的说明。
 func (v *Validator) routeReviewEvidenceAgrees(taskSlug string, s State) Result {
 	const check = "Route Review Evidence (R-4b)"
 	if s.Review.Target == "" {
@@ -256,11 +259,24 @@ func (v *Validator) routeReviewEvidenceAgrees(taskSlug string, s State) Result {
 		}
 		return Result{Status: StatusPass}
 	}
-	if exists {
+	if !exists {
+		return Result{Status: StatusPass}
+	}
+	// architecture.md 存在于快照的树里，不证明该快照是结构交付快照：它可能来自更早的
+	// ARCHITECT 历史，之后 Owner 明确把路线改为 COMPLEX，业务实现仍要继续
+	// （`.agent/tasks/<task>/architecture.md` 不会被自动删除）。因此只拒绝
+	// 「该快照本身改写/引入 architecture.md」的结构交付提交，不拒绝仅仅继承历史
+	// 结构文件的新实现快照：既不误拒绝合法路线变更，也不允许把 D1 直接复用为
+	// COMPLEX 的 Review 证据。
+	touched, err := v.Git.CommitTouchesPath(s.Review.Target, archPath)
+	if err != nil {
+		return Result{Status: StatusError, Error: fmt.Sprintf("diff-tree %s -- %s: %v", s.Review.Target, archPath, err)}
+	}
+	if touched {
 		return failResult(taskSlug, check,
-			fmt.Sprintf("review.target=%s 含 %s", s.Review.Target, archPath),
-			"不含 architecture.md 的实现快照",
-			fmt.Sprintf("含结构产物的是 ARCHITECT 结构快照，不得作为 %s 的 Review 证据", s.Route))
+			fmt.Sprintf("review.target=%s 自身改写了 %s", s.Review.Target, archPath),
+			"不改写 architecture.md 的实现快照",
+			fmt.Sprintf("该快照是 ARCHITECT 结构交付证据，不得作为 %s 的 Review 证据", s.Route))
 	}
 	return Result{Status: StatusPass}
 }

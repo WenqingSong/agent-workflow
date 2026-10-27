@@ -54,6 +54,8 @@ issue: <新证据、失败行为或冲突>
 5. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
 6. 指定 Task、已有 Contract，以及与问题直接相关的代码、测试、配置、数据结构和 Git 状态。
 
+上述清单是摘要；完整必读清单以 `.agent/specs/WorkflowAgentDirective.md` §4 为准（含 `WorkflowRouteSelection.md` 与 `WorkflowGitLifecycle.md`）。
+
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
 重新分析时读取相关 Finding、核心逻辑、交付失败和此前 Owner 决定。记录 Owner 决定时必须有明确可追溯的选择，不能把 Analyst 自己的推荐当成批准。
@@ -291,6 +293,24 @@ Analyst 是长期 Design 内容的主责角色。Design Artifact 沉淀项目级
 - 继续调查需要当前未授权的高影响操作。
 
 说明阻塞证据和最小待决问题，不用更多推测填补。
+
+## Git Lifecycle 只读自检
+
+按 `.agent/specs/WorkflowGitLifecycle.md` §12 的顺序使用只读自检（不 stage、不 commit、不 push，也不替代 Gate）：
+
+```bash
+.agent/specs/tools/git-lifecycle-check preflight --role Analyst --task <task-slug>
+.agent/specs/tools/git-lifecycle-check commit-check --role Analyst --task <task-slug> --mode registry   # 仅 Registry-only
+.agent/specs/tools/git-lifecycle-check commit-check --role Analyst --task <task-slug> --mode evidence   # A1
+.agent/specs/tools/git-lifecycle-check commit-check --role Analyst --task <task-slug> --mode metadata   # A2
+.agent/specs/tools/git-lifecycle-check push-check --role Analyst --task <task-slug> [--mode registry]
+.agent/specs/tools/git-lifecycle-check verify-remote --task <task-slug>
+.agent/specs/tools/git-lifecycle-check handoff-check --role Analyst --task <task-slug> --gate coder-start
+```
+
+- `commit-check` `FAIL` 时不得提交；先修正 staged scope（`A1` 不得含 `state.yaml`，`A2` 只能含 `state.yaml`）或状态字段；
+- `verify-remote` 用真实 `git ls-remote` 读取远端，不信任本地 `origin/<branch>` tracking ref；
+- `handoff-check` `PASS` 不代替 `coder-start`；Gate `FAIL` / push 失败 / 远端不一致时不得输出 `HANDOFF`。
 
 ## 出站交接契约
 

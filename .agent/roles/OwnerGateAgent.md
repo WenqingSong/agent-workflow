@@ -51,6 +51,8 @@ extra_instruction: <可选>
 6. 指定 Task、已批准 Contract、`findings.md`、`core-logic.md`、当前 `state.yaml` 和 `review.target` 对应的实现与测试；
 7. `ARCHITECT` 路线额外读取 `architecture.md`、结构骨架与结构测试、`contract.md` 的 `NOT_EXECUTED` 业务清单，以及架构相关的 `docs/design/*`。
 
+上述清单是摘要；完整必读清单以 `.agent/specs/WorkflowAgentDirective.md` §4 为准（含 `WorkflowRouteSelection.md` 与 `WorkflowGitLifecycle.md`）。
+
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
 开始前先运行本阶段入口 Gate：
@@ -202,6 +204,23 @@ Owner 决定不等于本轮完成。无论 `ACCEPT` 还是 `REJECT`，都按以�
 - `ARCHITECT` 下缺少独立验证所需的结构产物、构建 / 结构测试证据或 `NOT_EXECUTED` 清单；
 - Owner 决策含糊，无法确定实际选择，且不能通过重新提问澄清；
 - Owner 明确 `REJECT`，但拒绝理由不足以判断退回对象是实现缺陷、结构缺陷还是 Contract / Design 问题。
+
+## Git Lifecycle 只读自检
+
+按 `.agent/specs/WorkflowGitLifecycle.md` §12 的顺序使用只读自检（不 stage、不 commit、不 push，也不替代 Gate）：
+
+```bash
+.agent/specs/tools/git-lifecycle-check preflight --role OwnerGate --task <task-slug>
+.agent/specs/tools/git-lifecycle-check commit-check --role OwnerGate --task <task-slug> --mode artifacts --phase v1   # ARCHITECT V1
+.agent/specs/tools/git-lifecycle-check commit-check --role OwnerGate --task <task-slug> --mode artifacts --phase v2   # Owner 决策
+.agent/specs/tools/git-lifecycle-check push-check --role OwnerGate --task <task-slug>
+.agent/specs/tools/git-lifecycle-check verify-remote --task <task-slug>
+.agent/specs/tools/git-lifecycle-check handoff-check --role OwnerGate --task <task-slug> --gate owner-gate-start   # V1 出口（同 Session）
+.agent/specs/tools/git-lifecycle-check handoff-check --role OwnerGate --task <task-slug> --gate delivery-start     # ACCEPT 出口
+```
+
+- `--phase` 必须显式给出：`v1` 只写 `findings.md` / `core-logic.md` / `review.*`（`review.target` 保持 D1），`v2` 只写 `owner-decision.md` / `owner.*`；V1 与 V2 分两次出站，不得合并；
+- `verify-remote` 用真实 `git ls-remote`，不信任本地 tracking ref；`handoff-check` `PASS` 不代替 Gate。
 
 ## 出站交接契约
 

@@ -51,6 +51,8 @@ Cleaner 不依赖 Coder 的自评，不替 Owner 最终接受，也不执行 Del
 5. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
 6. 指定 Task、已批准 Contract（如有）、已有 Findings、任务基线、当前 Git 状态、完整相关 Diff、生产代码和测试。
 
+上述清单是摘要；完整必读清单以 `.agent/specs/WorkflowAgentDirective.md` §4 为准（含 `WorkflowRouteSelection.md` 与 `WorkflowGitLifecycle.md`）。
+
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
 开始审查前先运行入口 Gate：`.agent/bin/workflow-check gate cleaner-start <task>`。该 Gate 机械确认 `review.status=PENDING`、`review.target` 是当前 feature 历史中真实存在的 commit，且 `review.target..HEAD` 只含本任务 Review-neutral artifacts。Gate `FAIL` 时不进入审查：请求尚未完成或证据不稳定时，按「出站交接契约」输出 `BLOCKED` + `STOP`，`NEXT_ROLE=CODER` 要求补完自身出站；超出 Cleaner authority 时选择唯一解阻方（`ANALYST` / `OWNER`）。审查对象始终是 C1，不是 Coder 的 metadata commit，也不是当前 working tree。
@@ -301,6 +303,22 @@ CLEAN / CHANGES_REQUIRED / BLOCKED
 6. 完成后按「出站交接契约」输出 `RESULT=CHANGES_REQUIRED`、`NEXT_ROLE=CODER`、`FAILURE_HANDOFF`，并用十项模板生成可直接执行的修复 Prompt，写明 Finding、Review Target 与下一步动作。
 
 退回 Coder 不经过下一角色入口 Gate（Coder 的 Finding 修复模式没有独立 Gate），但必须完成 Push 与远端同步，否则下一次 Session 拿不到真实 Finding。Coder 修复后必须形成新的实现快照（新的 C1）并写入新的 `review.status=PENDING` 与新的 `review.target`；Cleaner 按新靶标重新审查，旧 CLEAN、旧 C1 与旧审查结论一律不得复用。
+
+## Git Lifecycle 只读自检
+
+按 `.agent/specs/WorkflowGitLifecycle.md` §12 的顺序使用只读自检（不 stage、不 commit、不 push，也不替代 Gate）：
+
+```bash
+.agent/specs/tools/git-lifecycle-check preflight --role Cleaner --task <task-slug>
+.agent/specs/tools/git-lifecycle-check commit-check --role Cleaner --task <task-slug> --mode artifacts
+.agent/specs/tools/git-lifecycle-check push-check --role Cleaner --task <task-slug>
+.agent/specs/tools/git-lifecycle-check verify-remote --task <task-slug>
+.agent/specs/tools/git-lifecycle-check handoff-check --role Cleaner --task <task-slug> --gate owner-gate-start   # 仅 CLEAN
+```
+
+- `--mode artifacts` 只允许 `findings.md`、`core-logic.md` 与 `state.yaml` 的 `review.status` / `review.target`；`review.target` 必须保持 C1；
+- `CHANGES_REQUIRED` 仍要 commit + push + 远端核验，但没有入口 Gate，因此 `handoff-check` 不带 `--gate`；
+- `verify-remote` 用真实 `git ls-remote`，不信任本地 tracking ref；`handoff-check` `PASS` 不代替 `owner-gate-start`。
 
 ## 出站交接契约
 

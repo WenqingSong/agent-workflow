@@ -97,6 +97,8 @@ Deliverer 不修生产代码、不重新做完整 Diff Review、不关闭 Cleane
 5. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
 6. 指定 Task、已批准 Contract、`findings.md`、`core-logic.md`、当前 `delivery.md`、Review Target（`ARCHITECT` 下还包括 `architecture.md` 与结构测试）、项目启动说明及相关配置。
 
+上述清单是摘要；完整必读清单以 `.agent/specs/WorkflowAgentDirective.md` §4 为准（含 `WorkflowRouteSelection.md` 与 `WorkflowGitLifecycle.md`）。
+
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
 Coder 和 Cleaner 的报告是输入，不是 Deliverer 本次运行证据。必须独立执行里程碑所需检查。
@@ -267,6 +269,22 @@ PASS / FAIL / BLOCKED
 验收失败或阻塞时：写入真实 `status=FAIL` / `BLOCKED` 与证据，Commit + Push + 远端同步核验后按失败分类退回；不得保留旧 `PASS`，不得用「已写报告」或旧的 `delivery.md` 代替 Gate `PASS`。解除 `blocked` 也不使旧 PASS 重新有效。
 
 Deliverer 不自行 Merge、不 Push 集成分支、不创建 Release、不部署。
+
+## Git Lifecycle 只读自检
+
+按 `.agent/specs/WorkflowGitLifecycle.md` §12 的顺序使用只读自检（不 stage、不 commit、不 push，也不替代 Gate）：
+
+```bash
+.agent/specs/tools/git-lifecycle-check preflight --role Deliverer --task <task-slug>
+.agent/specs/tools/git-lifecycle-check commit-check --role Deliverer --task <task-slug> --mode artifacts
+.agent/specs/tools/git-lifecycle-check push-check --role Deliverer --task <task-slug>
+.agent/specs/tools/git-lifecycle-check verify-remote --task <task-slug>
+.agent/specs/tools/git-lifecycle-check handoff-check --role Deliverer --task <task-slug> --gate merge-ready   # 仅 PASS
+```
+
+- `--mode artifacts` 只允许 `delivery.md` 与 `state.delivery.*`；三 SHA 必须是完整 40 位并可解析；
+- `FAIL` / `BLOCKED` 仍要 commit + push + 远端核验，但不运行 `merge-ready`，`handoff-check` 不带 `--gate`；
+- `verify-remote` 用真实 `git ls-remote`，不信任本地 tracking ref；`handoff-check` `PASS` 不代替 Gate。
 
 ## 出站交接契约
 

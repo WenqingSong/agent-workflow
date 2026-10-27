@@ -48,6 +48,8 @@ extra_instruction: <可选>
 5. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
 6. 指定 Task、相关代码和测试，以及当前 Git 状态和任务基线。
 
+上述清单是摘要；完整必读清单以 `.agent/specs/WorkflowAgentDirective.md` §4 为准（含 `WorkflowRouteSelection.md` 与 `WorkflowGitLifecycle.md`）。
+
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
 复杂任务必须读取状态为 `APPROVED` 的 `contract.md`。修复模式必须读取指定 Finding 和复审要求。
@@ -188,6 +190,24 @@ C2 不得混入任何新的业务代码、测试或 Design 修改。C2 提交后
 修复后必须重新形成实现快照：新的 C1 提交真实修复与回归测试，再提交新的 C2 写入 `review.status=PENDING`、`review.target=<新 C1 完整 40 位 SHA>`，随后 Push 并运行 `cleaner-start`。不得复用旧 C1、旧 C2 或旧 CLEAN 结论；Cleaner 的 `CHANGES_REQUIRED` 结论只对新快照重新审查。
 
 Coder 不修改 Finding 的定义、级别和状态。若 Finding 证据不成立、与 Task 冲突或修复必须扩大 Scope，提交具体证据，不自行删除 Finding。
+
+## Git Lifecycle 只读自检
+
+按 `.agent/specs/WorkflowGitLifecycle.md` §12 的顺序使用只读自检（不 stage、不 commit、不 push，也不替代 Gate）：
+
+```bash
+.agent/specs/tools/git-lifecycle-check preflight --role Coder --task <task-slug>
+.agent/specs/tools/git-lifecycle-check commit-check --role Coder --task <task-slug> --mode evidence   # C1
+.agent/specs/tools/git-lifecycle-check commit-check --role Coder --task <task-slug> --mode metadata   # C2
+.agent/specs/tools/git-lifecycle-check commit-check --role Coder --task <task-slug> --mode forced     # write-ahead / DANGER
+.agent/specs/tools/git-lifecycle-check push-check --role Coder --task <task-slug>
+.agent/specs/tools/git-lifecycle-check verify-remote --task <task-slug>
+.agent/specs/tools/git-lifecycle-check handoff-check --role Coder --task <task-slug> --gate cleaner-start
+```
+
+- `C1` 不得含 `state.yaml`；`C2` 只能含 `state.yaml`；`FORCED_EVIDENCE` 只允许账本、`danger-report.md` 与 `blocked` 字段；
+- `verify-remote` 用真实 `git ls-remote`，不信任本地 tracking ref；
+- `handoff-check` `PASS` 不代替 `cleaner-start`；Gate `FAIL` / push 失败 / 远端不一致时不得输出 `HANDOFF`。
 
 ## 出站交接契约
 

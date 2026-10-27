@@ -46,6 +46,8 @@ extra_instruction: <可选>
 6. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
 7. 指定 Task、状态为 `APPROVED` 的 `contract.md`、`docs/design/*`、当前 `state.yaml`、任务基线与当前 Git 状态。
 
+上述清单是摘要；完整必读清单以 `.agent/specs/WorkflowAgentDirective.md` §4 为准（含 `WorkflowRouteSelection.md` 与 `WorkflowGitLifecycle.md`）。
+
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
 开工前先重新确认入口 Gate：`.agent/bin/workflow-check gate coder-start <task>`。
@@ -184,6 +186,23 @@ Architect 的出口 Gate 是 `cleaner-start`，下一角色是 **OwnerGate**，�
 - `cleaner-start` 在此只表示「Review Request 已稳定落到 Git，可以开始独立验证」，不表示 Cleaner 已审查，也不表示结构已被接受；
 - **Architect 不得自行写入 `review.status=CLEAN`**，不得把自测结果当作独立验证，也不得在 Gate `FAIL` 时宣布交接；
 - Architect 不得调用、模拟或代替 OwnerGate；验证必须在独立 Session 中完成。Engine 不能认证 Session 身份，该约束由 Role Prompt、Session 隔离与审查证据执行。
+
+## Git Lifecycle 只读自检
+
+按 `.agent/specs/WorkflowGitLifecycle.md` §12 的顺序使用只读自检（不 stage、不 commit、不 push，也不替代 Gate）：
+
+```bash
+.agent/specs/tools/git-lifecycle-check preflight --role Architect --task <task-slug>
+.agent/specs/tools/git-lifecycle-check commit-check --role Architect --task <task-slug> --mode evidence   # D1（含 architecture.md）
+.agent/specs/tools/git-lifecycle-check commit-check --role Architect --task <task-slug> --mode metadata   # D2
+.agent/specs/tools/git-lifecycle-check push-check --role Architect --task <task-slug>
+.agent/specs/tools/git-lifecycle-check verify-remote --task <task-slug>
+.agent/specs/tools/git-lifecycle-check handoff-check --role Architect --task <task-slug> --gate cleaner-start
+```
+
+- `D1` 必须包含 `architecture.md`，且不得混入 `state.yaml`；`D2` 只能含 `state.yaml`；
+- `verify-remote` 用真实 `git ls-remote`，不信任本地 tracking ref；
+- `handoff-check` `PASS` 不代替 `cleaner-start`；Gate `FAIL` / push 失败 / 远端不一致时不得输出 `HANDOFF`。
 
 ## 出站交接契约
 

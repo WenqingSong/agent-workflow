@@ -27,8 +27,8 @@
 
 适用于七个 Role：TaskBuilder、Analyst、Architect、Coder、Cleaner、OwnerGate、Deliverer，以及三条路线 `NORMAL` / `COMPLEX` / `ARCHITECT`。
 
-- 本任务修改 Analyst、Architect、Coder、Cleaner、OwnerGate、Deliverer 六个 Prompt；
-- TaskBuilder 由 Agent A 独占修改，其最终输出遵守**相同字段接口**；本文件与自动化检查只约束其接口形状，不要求本分支改写 `TaskBuilderPrompt.md`。
+- 本契约约束全部七个 Prompt；
+- TaskBuilder 的出站块在 V3.2.0 第二阶段集成中已改为同一字段接口（`CURRENT_ROLE=TASK_BUILDER`、`NEXT_ROLE` 大写枚举、`FAILURE_HANDOFF` 十项 Prompt），其出口表与本文件 §8 矩阵逐项一致；`TASK_BUILDER` 行因此由「接口已定义」升级为「已强制」。
 
 ## 2. 必填输出块
 
@@ -176,7 +176,7 @@ Gate `FAIL`、push 失败、远端未同步或工作区不干净时：**不得�
 
 - `gate` 只能取 `coder-start` / `cleaner-start` / `owner-gate-start` / `delivery-start` / `merge-ready` / `none`；
 - `prompt` 取 `REQUIRED` / `NONE`；
-- `enforced=YES` 表示本任务要求该 Role Prompt 与该矩阵一致；`NO` 表示接口已定义、文件由 Agent A 独占修改。
+- `enforced=YES` 表示该 Role Prompt 的 `# handoff-exits` 表必须与矩阵逐项一致（七个角色全部适用）；V3.2.0 第二阶段集成后不再存在 `NO` 行。
 
 `RESULT` 是角色终态码，可与 `state.yaml` 的枚举不同（例如 Deliverer 的 `FAIL_*` 只表达失败原因与路由）；`state.delivery.status` 等 schema 字段仍保持 `PASS` / `FAIL` / `BLOCKED` 原语义，不因本契约新增枚举。
 
@@ -241,11 +241,15 @@ DELIVERER|FAIL_STALE_REVIEW|FAIL_STALE_REVIEW_EVIDENCE|CODER|FAILURE_HANDOFF|non
 DELIVERER|FAIL_UNVERIFIED_CHANGE|FAIL_UNVERIFIED_CHANGE|OWNER|FAILURE_HANDOFF|none|REQUIRED|YES
 DELIVERER|BLOCKED_ENTRY_GATE|BLOCKED|OWNER|STOP|none|NONE|YES
 DELIVERER|DANGER|DANGER|NONE|STOP|none|NONE|YES
-TASK_BUILDER|TASK_READY_NORMAL|TASK_READY|CODER|HANDOFF|coder-start|REQUIRED|NO
-TASK_BUILDER|TASK_READY_COMPLEX|TASK_READY|ANALYST|HANDOFF|none|REQUIRED|NO
-TASK_BUILDER|TASK_READY_ARCHITECT|TASK_READY|ANALYST|HANDOFF|none|REQUIRED|NO
-TASK_BUILDER|BLOCKED_OWNER_INPUT|BLOCKED|OWNER|STOP|none|NONE|NO
-TASK_BUILDER|DANGER|DANGER|NONE|STOP|none|NONE|NO
+TASK_BUILDER|READY_NORMAL|BOOTSTRAP_COMPLETE|CODER|HANDOFF|coder-start|REQUIRED|YES
+TASK_BUILDER|READY_COMPLEX|BOOTSTRAP_COMPLETE|ANALYST|HANDOFF|none|REQUIRED|YES
+TASK_BUILDER|READY_ARCHITECT|BOOTSTRAP_COMPLETE|ANALYST|HANDOFF|none|REQUIRED|YES
+TASK_BUILDER|FAILED_BOOTSTRAP|BOOTSTRAP_FAILED|OWNER|FAILURE_HANDOFF|none|REQUIRED|YES
+TASK_BUILDER|REPAIR_IN_SCOPE|BOOTSTRAP_REPAIR_IN_SCOPE|TASK_BUILDER|SAME_SESSION|none|NONE|YES
+TASK_BUILDER|BLOCKED_OWNER_INPUT|OWNER_INPUT_REQUIRED|OWNER|OWNER_DECISION|none|NONE|YES
+TASK_BUILDER|BLOCKED_OWNER_DECISION|BLOCKED|OWNER|STOP|none|NONE|YES
+TASK_BUILDER|BLOCKED_NO_ACTOR|BLOCKED|NONE|STOP|none|NONE|YES
+TASK_BUILDER|DANGER|DANGER|NONE|STOP|none|NONE|YES
 ```
 
 ## 9. Git 出站接口
@@ -282,7 +286,7 @@ TASK_BUILDER|DANGER|DANGER|NONE|STOP|none|NONE|NO
 3. **合法停止 vs `NEXT_ROLE` 必填。** 必填指"必须明确给出唯一值"，`NONE` 是合法值。`DANGER` 与 Owner 终止任务必须 `NONE`；`BLOCKED` 允许 `OWNER`、`NONE`，或**缺失产物/交接的责任 Role**（例如 Coder 尚未形成 C1/C2 时由 Coder 先补完），但不得指向验收型下游（如 `BLOCKED → Cleaner`），也不得把该字段当作让下游继续执行的授权。
 4. **`AgentCollaborationSpecification` §5 "Owner Checkpoint 没有 NEXT_ROLE"。** 该表述针对"没有跨角色 Handoff"；本契约在输出层用 `NEXT_ROLE=OWNER` + `NEXT_ACTION=OWNER_DECISION` 标记同 Session 决策检查点，不构成 Handoff，也不写入 `state.yaml`。
 5. **DANGER / BLOCKED 不得生成越权执行指令。** 两者的 `HANDOFF_PROMPT` 一律 `NONE`；只允许在 `NEXT_ACTION` 中写明停止原因与恢复条件。
-6. **TaskBuilder 文件所有权。** `TaskBuilderPrompt.md` 由 Agent A 独占修改；本契约只固定字段接口，自动化检查不要求该文件在本分支包含完整字段。
+6. **TaskBuilder 出站对齐。** `TaskBuilderPrompt.md` 在 V3.2.0 第二阶段集成中已改为与本契约相同的字段接口与出口表；六个业务角色的 Prompt、本契约与静态检查现在覆盖全部七个角色。TaskBuilder 初始化阶段的 Git 动作（`TB-BRANCH-1`）仍由该 Prompt 定义，本契约只固定其出站声明。
 
 ## 12. 静态一致性与 SPEC_ONLY 边界
 

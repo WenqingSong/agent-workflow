@@ -23,6 +23,7 @@ ROLES = {
     "DELIVERER": ".agent/roles/DelivererAgent.md",
 }
 TASK_BUILDER = "TASK_BUILDER"
+TASK_BUILDER_PROMPT = ".agent/roles/TaskBuilderPrompt.md"
 
 GATES = {
     "coder-start",
@@ -60,8 +61,10 @@ REQUIRED_GATE_BY_ROLE = {
     "CLEANER": "owner-gate-start",
     "OWNER_GATE": "delivery-start",
     "DELIVERER": "merge-ready",
+    "TASK_BUILDER": "coder-start",
 }
-OWNER_WAIT_ROLES = {"ANALYST", "OWNER_GATE"}
+OWNER_WAIT_ROLES = {"ANALYST", "OWNER_GATE", "TASK_BUILDER"}
+ALL_ROLES = dict(ROLES, **{TASK_BUILDER: TASK_BUILDER_PROMPT})
 
 
 def fenced_rows(text: str, marker: str) -> list[list[str]]:
@@ -129,18 +132,20 @@ class HandoffContractTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.spec_text = SPEC.read_text(encoding="utf-8")
         cls.matrix = parse_matrix(cls.spec_text)
-        cls.role_texts = {role: (ROOT / path).read_text(encoding="utf-8") for role, path in ROLES.items()}
+        cls.role_texts = {role: (ROOT / path).read_text(encoding="utf-8") for role, path in ALL_ROLES.items()}
 
     def test_matrix_declares_all_seven_roles(self) -> None:
         roles = {row["role"] for row in self.matrix}
-        self.assertEqual(roles, set(ROLES) | {TASK_BUILDER})
+        self.assertEqual(roles, set(ALL_ROLES))
 
-    def test_task_builder_is_interface_only(self) -> None:
+    def test_every_role_is_enforced_by_its_prompt(self) -> None:
         rows = [r for r in self.matrix if r["role"] == TASK_BUILDER]
-        self.assertTrue(rows, "矩阵必须声明 TaskBuilder 接口")
-        self.assertTrue(all(r["enforced"] == "NO" for r in rows), "TaskBuilder 不得在本任务被强制改写")
+        self.assertTrue(rows, "矩阵必须声明 TaskBuilder 出口")
         enforced = {r["role"] for r in self.matrix if r["enforced"] == "YES"}
-        self.assertEqual(enforced, set(ROLES))
+        self.assertEqual(enforced, set(ALL_ROLES), "七个角色都必须被 Prompt 与静态检查强制")
+        # 出口表与矩阵逐项比对见 test_role_exit_tables_match_matrix；这里额外确认
+        # TaskBuilder 的 Prompt 真的产出了出口表，而不是只在矩阵里声明。
+        self.assertIn("# handoff-exits", self.role_texts[TASK_BUILDER])
 
     def test_matrix_values_and_uniqueness(self) -> None:
         terminal_keys: set[tuple[str, str]] = set()
@@ -187,7 +192,7 @@ class HandoffContractTest(unittest.TestCase):
                     self.assertEqual(gate, "none", row)
 
     def test_every_enforced_role_has_required_terminals(self) -> None:
-        for role in ROLES:
+        for role in ALL_ROLES:
             rows = [r for r in self.matrix if r["role"] == role]
             actions = {r["action"] for r in rows}
             for required in {"HANDOFF", "SAME_SESSION", "FAILURE_HANDOFF", "STOP"}:
@@ -231,7 +236,7 @@ class HandoffContractTest(unittest.TestCase):
         self.assertEqual(rows[0]["prompt"], "NONE")
 
     def test_role_exit_tables_match_matrix(self) -> None:
-        for role, path in ROLES.items():
+        for role, path in ALL_ROLES.items():
             expected = {
                 (r["result"], r["next_role"], r["action"], r["gate"])
                 for r in self.matrix
@@ -241,7 +246,7 @@ class HandoffContractTest(unittest.TestCase):
             self.assertEqual(actual, expected, f"{path} 出口表与统一矩阵不一致")
 
     def test_role_prompts_define_standard_fields(self) -> None:
-        for role, path in ROLES.items():
+        for role, path in ALL_ROLES.items():
             text = self.role_texts[role]
             self.assertIn("WorkflowHandoffContract.md", text, f"{path} 未引用统一契约")
             self.assertIn("## 出站交接", text, f"{path} 未固定标准块标题")

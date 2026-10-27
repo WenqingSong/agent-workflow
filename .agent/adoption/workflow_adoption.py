@@ -518,7 +518,7 @@ def build_manifest(
         "release": {
             "tag": "",
             "url": "",
-            "note": "P08 owns the v3.1.0 tag, CI build, checksums and release assets.",
+            "note": "Publication (tag, CI build, checksums, release assets) is owned by the release pipeline and is never inferred from the source tree.",
         },
     }
 

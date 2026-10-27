@@ -330,6 +330,80 @@ func TestRouteStructuralSnapshotNotReusable(t *testing.T) {
 	expectCheck(t, r.validator().GateCleanerStart(routeTaskDir), "Route Review Evidence")
 }
 
+// 仅仅「树里含 architecture.md」不等于该快照是结构交付：合法路线变更后，
+// 历史 architecture.md 仍在树中，COMPLEX 的实现快照不得因此被误拒绝。
+func TestRouteComplexSnapshotInheritingArchitectureAllowed(t *testing.T) {
+	r, _ := setupRouteInit(t, RouteComplex, Contract{Status: ContractPending}, RouteComplex)
+	s := baseState()
+	s.Route = RouteComplex
+	s, _ = approveContract(t, r, s)
+
+	// 早期 ARCHITECT 阶段留下的结构文件（路线变更后不删除）。
+	r.write(routeTaskDir+"/architecture.md", "# legacy architecture\n")
+	r.commit("legacy structural artifact")
+
+	// C1 只写实现代码，没有改写 architecture.md。
+	r.write("internal/impl.go", "package impl\n")
+	c1 := r.commit("C1 implementation")
+	s.Review = Review{Status: ReviewPending, Target: c1}
+	r.writeState(s)
+	r.commit("C2 review metadata")
+	r.pushFeature()
+
+	expectStatus(t, r.validator().GateCleanerStart(routeTaskDir), StatusPass)
+	expectStatus(t, r.validator().CheckRoute(routeTaskDir, true).Result, StatusPass)
+}
+
+// 同一快照本身改写了 architecture.md 时仍必须拒绝：那是结构交付证据。
+func TestRouteComplexSnapshotTouchingArchitectureRejected(t *testing.T) {
+	r, _ := setupRouteInit(t, RouteComplex, Contract{Status: ContractPending}, RouteComplex)
+	s := baseState()
+	s.Route = RouteComplex
+	s, _ = approveContract(t, r, s)
+
+	r.write(routeTaskDir+"/architecture.md", "# architecture v2\n")
+	r.write("internal/impl.go", "package impl\n")
+	snapshot := r.commit("structural deliverable mixed into implementation")
+	s.Review = Review{Status: ReviewPending, Target: snapshot}
+	r.writeState(s)
+	r.commit("review metadata")
+	r.pushFeature()
+
+	expectCheck(t, r.validator().GateCleanerStart(routeTaskDir), "Route Review Evidence")
+}
+
+// Owner 明确改变路线后，TaskBuilder 记录新路线并由 Analyst 重新形成 A1/A2，
+// 新证据必须通过；这验证 R-4a 不会把「合法重新审批」误判为「复用旧审批」。
+func TestRouteChangeWithReapprovalPasses(t *testing.T) {
+	r, _ := setupRouteInit(t, RouteArchitect, Contract{Status: ContractPending}, RouteArchitect)
+
+	// TaskBuilder 按 Owner 指令记录新路线（先改 route 与 task.md 并提交）。
+	r.write(routeTaskDir+"/task.md", taskMDFixture(RouteComplex))
+	changed := baseState()
+	changed.Route = RouteComplex
+	changed.Contract = Contract{Status: ContractPending}
+	r.writeState(changed)
+	r.commit("chore(task): 按 Owner 指令切换路线为 COMPLEX")
+	r.pushFeature()
+
+	// Analyst 重新形成 A1 / A2。
+	reapproved := baseState()
+	reapproved.Route = RouteComplex
+	reapproved, _ = approveContract(t, r, reapproved)
+
+	expectStatus(t, r.validator().GateCoderStart(routeTaskDir), StatusPass)
+	expectStatus(t, r.validator().CheckRoute(routeTaskDir, true).Result, StatusPass)
+
+	// 新的实现快照（不含 architecture.md）也必须能通过 R-4b。
+	r.write("internal/impl.go", "package impl\n")
+	c1 := r.commit("C1 implementation")
+	reapproved.Review = Review{Status: ReviewPending, Target: c1}
+	r.writeState(reapproved)
+	r.commit("C2 review metadata")
+	r.pushFeature()
+	expectStatus(t, r.validator().GateCleanerStart(routeTaskDir), StatusPass)
+}
+
 // ARCHITECT 的 Review 证据必须是结构快照（D1 含 architecture.md）。
 func TestRouteArchitectReviewRequiresStructuralSnapshot(t *testing.T) {
 	r, _ := setupRouteInit(t, RouteArchitect, Contract{Status: ContractPending}, RouteArchitect)

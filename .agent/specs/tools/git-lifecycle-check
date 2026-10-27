@@ -239,6 +239,36 @@ def allowed_for(mode: str, role: str, task: str, cfg: dict[str, object], phase: 
     return set()
 
 
+def role_owned_paths(role: str, task: str, cfg: dict[str, object]) -> set[str]:
+    """返回该角色在整轮执行中可能拥有的路径（不区分 Commit 类型）。
+
+    用途只有一个：判断「工作区里还有没有本角色尚未提交的成果」。
+    这与某一个 Commit 类型的 staged 白名单不同：METADATA 只允许 state.yaml，
+    但 Coder 未提交的业务代码仍属于 Coder 的 scope，必须先处置。
+    """
+    state = task_file(task, "state.yaml")
+    if role == "TaskBuilder":
+        return {task_file(task, "task.md"), state}
+    if role == "Analyst":
+        return {task_file(task, "contract.md"), state, "*design*"} | set(cfg.get("registries", []))  # type: ignore[arg-type]
+    if role == "Architect":
+        return {"*business*", task_file(task, "architecture.md"), state}
+    if role == "Coder":
+        return {"*business*", state}
+    if role == "Cleaner":
+        return {task_file(task, "findings.md"), task_file(task, "core-logic.md"), state}
+    if role == "OwnerGate":
+        return {
+            task_file(task, "owner-decision.md"),
+            task_file(task, "findings.md"),
+            task_file(task, "core-logic.md"),
+            state,
+        }
+    if role == "Deliverer":
+        return {task_file(task, "delivery.md"), state}
+    return set()
+
+
 def path_allowed(path: str, allowed: set[str]) -> bool:
     if "*business*" in allowed and is_business_path(path):
         return True
@@ -415,14 +445,22 @@ def cmd_commit_check(args: argparse.Namespace, root: str) -> tuple[str, str]:
             raise CheckError("REGISTRY_ONLY 只在 integration branch 上允许")
     elif str(cfg.get("integration_branch", "")) == branch:
         raise CheckError(f"{mode} 不得直接提交到 integration branch {branch}")
-    if unstaged_paths(root):
-        raise CheckError(f"存在未暂存修改，先处置再提交: {', '.join(unstaged_paths(root))}")
-    if untracked_paths(root):
-        raise CheckError(f"存在未跟踪文件，先处置再提交: {', '.join(untracked_paths(root))}")
+    # 只对本角色 owned scope 内的残留判 FAIL：WorkflowGitLifecycle §3.3 允许在
+    # 保留其他角色修改现场的前提下提交自己的明确路径。若本角色范围内仍有未暂存 /
+    # 未跟踪文件，说明提交不完整或 staged 范围被拆分，必须先处置（§3.3 第 3 种情况）。
     check_staged_scope(root, role, args.task, mode, args.phase)
+    owned = role_owned_paths(role, args.task, cfg)
+    pending = set(unstaged_paths(root)) | set(untracked_paths(root))
+    leftovers = sorted(path for path in pending if path_allowed(path, owned))
+    if leftovers:
+        raise CheckError(f"本角色范围内仍有未提交修改，先处置再提交: {', '.join(leftovers)}")
+    foreign = sorted(path for path in pending if not path_allowed(path, owned))
     if mode != "registry":
         check_field_transition(root, role, args.task, mode, args.phase)
-    return "commit-check", f"role={role} mode={mode} task={args.task} paths={len(staged_paths(root))}"
+    detail = f"role={role} mode={mode} task={args.task} paths={len(staged_paths(root))}"
+    if foreign:
+        detail += f" foreign_preserved={len(foreign)}"
+    return "commit-check", detail
 
 
 def cmd_push_check(args: argparse.Namespace, root: str) -> tuple[str, str]:

@@ -46,13 +46,17 @@ extra_instruction: <可选>
 
 本 Prompt 只在满足 `.agent/specs/WorkflowAgentDirective.md` §2 的三条激活条件时生效；激活判定、退出条件与缺失处理以该 Directive 为准，本 Prompt 不重复定义。
 
-开始前按顺序显式读取：
+开始前按顺序显式读取（清单与 `.agent/specs/WorkflowAgentDirective.md` §4 一致；该节是唯一权威来源）：
 
 1. `.agent/specs/WorkflowAgentDirective.md`（Workflow 专用入口；缺失或不可读 → `BLOCKED`，不得凭记忆继续）；
 2. 本角色 Prompt（`.agent/roles/TaskBuilderPrompt.md`）；
 3. `.agent/specs/AgentCollaborationSpecification.md`（协作规范）与 `.agent/specs/Five-AgentResponsibilityBoundary.md`（职责边界）；
-4. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
-5. Owner 需求，以及定义本任务所需的少量真实代码、配置和 Git 状态。
+4. `.agent/specs/WorkflowRouteSelection.md`（路线判定权、`state.yaml.route` 与 Engine 校验；缺失或不可读 → `BLOCKED`，不得凭记忆决定路线）；
+5. `.agent/specs/WorkflowLoopCircuitBreaker.md`（两轮预算、账本、DANGER 停机；缺失或不可读 → `BLOCKED`）；
+6. `.agent/specs/WorkflowHandoffContract.md`（统一出站交接字段与失败 Prompt 模板；缺失或不可读 → `BLOCKED`，标注 `HANDOFF_CONTRACT_ABSENT`）；
+7. `.agent/specs/WorkflowGitLifecycle.md`（Stage / Commit / Push / Gate / HANDOFF 的时机与完成条件；缺失或不可读 → `BLOCKED`）；
+8. 宿主根 `AGENTS.md`：存在时读取并遵守宿主业务规范；不存在时继续，不创建、不阻断；
+9. Owner 需求，以及定义本任务所需的少量真实代码、配置和 Git 状态。
 
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
@@ -120,6 +124,22 @@ extra_instruction: <可选>
 6. 普通 Push：`git push -u <remote> <name>`，不带 `--force` / `--force-with-lease`；
 7. 核实远端：`git ls-remote --heads <remote> refs/heads/<name>` 的 SHA == `git rev-parse HEAD`，且 `git status --porcelain` 为空。
 
+### Git Lifecycle 只读自检
+
+初始化按 `.agent/specs/WorkflowGitLifecycle.md` 的顺序执行：`preflight → 写 Artifact → commit-check → commit → push-check → push → verify-remote →（NORMAL）Gate → handoff-check → 出站`。自检只读，不替代 Gate：
+
+```bash
+.agent/specs/tools/git-lifecycle-check preflight --role TaskBuilder --task <task-slug> --bootstrap
+.agent/specs/tools/git-lifecycle-check commit-check --role TaskBuilder --task <task-slug> --mode bootstrap
+.agent/specs/tools/git-lifecycle-check push-check --role TaskBuilder --task <task-slug> --expect-branch <name>
+.agent/specs/tools/git-lifecycle-check verify-remote --task <task-slug> --branch <name>
+.agent/specs/tools/git-lifecycle-check handoff-check --role TaskBuilder --task <task-slug> --gate coder-start   # NORMAL；COMPLEX / ARCHITECT 去掉 --gate
+```
+
+- 自检 `FAIL`（exit 1）时**不得**继续写 Git；先修正 Artifact / staged scope / 分支 / 远端事实；
+- 自检 `ERROR`（exit 2）表示环境或 Git 运行级问题，按 `BLOCKED` 报告，不得当作 PASS；
+- 自检不认证 Session，也不能阻止直接 `git commit` / `git push`；它只把「现在是否处于合法阶段」变成可复核事实。
+
 ### 结果码（Prompt 层，不写入 `state.yaml`）
 
 | 结果码 | 触发条件 | 处理 |
@@ -158,7 +178,7 @@ TaskBuilder 的通用出口是 **Commit + Push + 远端同步核验 + 路线自�
 - 该命令只验证路线事实与状态是否自洽（route 枚举、`contract.status`、`task.md` 的 `## Complexity`、Contract 审批证据、Review 证据形态），`ROUTE_OK` 才允许继续出站；它不是 Gate，不产生 Handoff 授权，也不替代任何 Gate；
 - 只提交已完成且可验证的初始化交付物：`task.md`、`state.yaml`、`findings.md`、`core-logic.md`、`owner-decision.md`、`delivery.md`。不得把未完成草案、无关修改或其他角色的改动混入本次 commit；
 - `coder-start` 要求 Contract 为 `APPROVED` 或 `NOT_REQUIRED`；COMPLEX / ARCHITECT 的 `PENDING` 必然使其 `FAIL`，因此不对这两条路线运行它，也不得为了让它通过而把 Contract 改成 `NOT_REQUIRED`；
-- ARCHITECT 的角色与 Gate 语义不在本 Prompt 定义；本 Prompt 只固定「先交 Analyst」，不创建 Architect Role、不提前改变 Gate 语义；
+- `ARCHITECT` 路线在 V3.1.0 已接入：Architect 角色与 OwnerGate V1 结构验证阶段都存在。本 Prompt 只固定「`COMPLEX` / `ARCHITECT` 先交 Analyst」，不改变角色序列与 Gate 语义，也不替 Analyst 起草结构 Contract；
 - Analyst 批准 Contract 后，由后续角色按各自入口 Gate 继续，TaskBuilder 不预跑后续 Gate；
 - NORMAL 的 `coder-start` `FAIL` 时不交接：先修复本角色 Artifact 或 Git 收尾，超出本角色 authority 才 `BLOCKED`。
 
@@ -394,34 +414,58 @@ Owner 的变化影响已确认 Contract 时，交 Analyst 重新分析，不能�
 
 不要在聊天中复制完整 `task.md`。
 
-### 统一交接接口
+### 出站交接契约
 
-结尾必须逐项输出以下五个字段，缺一不可：
+必读 `.agent/specs/WorkflowHandoffContract.md`。最终回答必须以该规范 §2 的标准块结尾，标题固定为 `## 出站交接`，块之后不再附加任何文字：
 
 ```text
-RESULT: <BOOTSTRAP_COMPLETE | OWNER_INPUT_REQUIRED | TASK_ALREADY_EXISTS | BRANCH_ALREADY_EXISTS | BASE_MISMATCH | DIRTY_WORKTREE | STAGED_CONTENT_CONFLICT | REMOTE_NOT_SYNCED | BLOCKED>
-CURRENT_ROLE: TaskBuilder
-NEXT_ROLE: <Coder | Analyst | Owner | 无>
-NEXT_ACTION: <下一角色应立即执行的动作；无下一角色时写停止理由>
-NEXT_TARGET: <下一角色读取或操作的目标，如 .agent/tasks/<task-slug>>
+## 出站交接
+
+RESULT: <本角色终态结果码>
+CURRENT_ROLE: TASK_BUILDER
+NEXT_ROLE: <CODER | ANALYST | OWNER | NONE>
+NEXT_ACTION: <HANDOFF | FAILURE_HANDOFF | OWNER_DECISION | SAME_SESSION | STOP>: <一句话动作>
+NEXT_TARGET: <任务路径>；<状态字段 / Commit / 证据路径>
+HANDOFF_PROMPT: <NONE | 完整可复制 Prompt>
 ```
 
-- 正常 Handoff 时 `NEXT_ROLE` 只能是 `Coder`（NORMAL，且 `coder-start` `PASS`）或 `Analyst`（COMPLEX / ARCHITECT，且 `route` 自检 `ROUTE_OK`）；
-- `BLOCKED` / `OWNER_INPUT_REQUIRED` 时 `NEXT_ROLE` 为 `Owner`（或 `无`），`NEXT_ACTION` 写明需要 Owner 决定的事项；
-- 该接口是 Prompt 层输出，不写入 `state.yaml`，也不改变任何 Gate 语义。
+本角色合法出口（与 `.agent/specs/WorkflowHandoffContract.md` §8 统一矩阵一致）：
+
+```text
+# handoff-exits
+RESULT|NEXT_ROLE|NEXT_ACTION|GATE
+BOOTSTRAP_COMPLETE|CODER|HANDOFF|coder-start
+BOOTSTRAP_COMPLETE|ANALYST|HANDOFF|none
+BOOTSTRAP_FAILED|OWNER|FAILURE_HANDOFF|none
+BOOTSTRAP_REPAIR_IN_SCOPE|TASK_BUILDER|SAME_SESSION|none
+OWNER_INPUT_REQUIRED|OWNER|OWNER_DECISION|none
+BLOCKED|OWNER|STOP|none
+BLOCKED|NONE|STOP|none
+DANGER|NONE|STOP|none
+```
+
+- **正常交接**：`RESULT=BOOTSTRAP_COMPLETE`。`NORMAL` → `NEXT_ROLE=CODER` + `HANDOFF`，前提是 `coder-start` `PASS`；`COMPLEX` / `ARCHITECT` → `NEXT_ROLE=ANALYST` + `HANDOFF`（无入口 Gate，但 `route` 自检必须 `ROUTE_OK`）。两种情况都必须先完成 Commit + Push + 远端核验 + 工作区 clean；
+- **初始化失败且需要其他 Role 接手**：`RESULT=BOOTSTRAP_FAILED` + `NEXT_ROLE=OWNER` + `FAILURE_HANDOFF`，并给出下文十项模板的完整 Prompt（例如基线冲突、Owner 授权与现场不一致、需求与已确认 Contract 冲突且必须由 Owner 决定路线）；
+- **本角色范围内继续修复**：`RESULT=BOOTSTRAP_REPAIR_IN_SCOPE` + `NEXT_ROLE=TASK_BUILDER` + `SAME_SESSION`（例如 `coder-start` `FAIL` 但原因在本角色 Artifact / Git 收尾内）；不交接、不算终态；
+- **等待 Owner 决策**：`RESULT=OWNER_INPUT_REQUIRED`（五要素缺失、授权不明）或 `BLOCKED` + `NEXT_ROLE=OWNER` + `OWNER_DECISION` / `STOP`；`HANDOFF_PROMPT=NONE`，不得用候选菜单代替最终选择；
+- **无人可解除的阻塞**：`BLOCKED` + `NEXT_ROLE=NONE` + `STOP`；
+- **DANGER**：按 `.agent/specs/WorkflowLoopCircuitBreaker.md` §8 持久化后输出 `NEXT_ROLE=NONE` + `STOP`，不生成任何下游执行 Prompt；
+- 该接口是 Prompt 层输出，不写入 `state.yaml`，也不改变任何 Gate 语义；`NEXT_ROLE` 必须逐字使用上述大写枚举，不得写「无」「Coder / Analyst」或任何候选列表。
 
 ### 失败交接的 HANDOFF_PROMPT
 
-需要把失败交给其他 Role 处理时（例如基线冲突需 Owner 决定、需求与已确认 Contract / 安全边界冲突需 Analyst 与 Owner 判断、`route` 与证据冲突需 Owner 决定路线），除上述五个字段外还必须追加可直接执行的 `HANDOFF_PROMPT`：
+`NEXT_ACTION=FAILURE_HANDOFF` 时，`HANDOFF_PROMPT` 必须按 `.agent/specs/WorkflowHandoffContract.md` §4 的十项模板写成可直接执行的完整 Prompt，缺一不可：
 
-```text
-HANDOFF_PROMPT:
-  背景事实: <已核实的 Commit / 文件 / Gate 输出>
-  失败证据: <哪一项检查失败、实际值与期望值>
-  需要回答的问题: <必须由该 Role 决定的具体问题>
-  不得做的事: <不得自行降级路线、不得改 Contract、不得复用旧证据等>
-  完成后的接口: <该 Role 应输出的 RESULT / NEXT_ROLE>
-```
+1. 接收 Role（与 `NEXT_ROLE` 一致）。
+2. Repository / Branch / Task Path。
+3. 当前 Commit 与证据状态（已核实的 SHA；未知写 `UNKNOWN` 并给出核验命令）。
+4. 路线 `NORMAL` / `COMPLEX` / `ARCHITECT`。
+5. 具体失败原因（结果码、`git` 命令输出、`workflow-check` / 自检输出）。
+6. 接收者应做什么（最小必要动作，不夹带新需求）。
+7. 允许修改的范围（文件 / 目录白名单）。
+8. 应验证的 Gate 与完成条件（Gate 名称只能来自五个既有 Gate，或明确「无入口 Gate」）。
+9. 不得修改的内容（Owner 已确认范围、Contract、其他角色 artifacts 等）。
+10. 完成后的下一步（回到哪个 Gate、交给哪个 Role、需要谁决策）。
 
-`HANDOFF_PROMPT` 必须能脱离本次对话被下一角色直接执行：写明仓库、任务路径、分支、Commit SHA 和需要读取的 Artifact，不引用「上面说过的」内容。正常的成功 Handoff 不要求 `HANDOFF_PROMPT`。
+`HANDOFF_PROMPT` 必须能脱离本次对话被下一角色直接执行：写明仓库、任务路径、分支、Commit SHA 和需要读取的 Artifact，不引用「上面说过的」内容。正常的成功交接也必须给出可执行的接收者 Prompt（交给 `OWNER` 时 `HANDOFF_PROMPT=NONE`）。
 

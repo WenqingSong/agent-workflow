@@ -98,10 +98,12 @@ Feature Branch 的成立方式有两种：Owner 预先创建；或 Owner 给出�
 
 简单任务（无需独立 Contract/Design，`contract.status = NOT_REQUIRED`）可 `TaskBuilder → Coder`。TaskBuilder 不能为省流程擅自跳过 Analyst。
 
+三条路线（`NORMAL` / `COMPLEX` / `ARCHITECT`）由 **TaskBuilder** 按 `.agent/specs/WorkflowRouteSelection.md`（TB-ROUTE-1）判定并写入 `state.yaml.route` 与 `task.md` 的 `## Complexity`。Owner 明确指定的路线是硬约束，TaskBuilder 必须遵守；Owner 未指定时，TaskBuilder 必须独立判定，包括独立识别 `ARCHITECT`。不存在「`ARCHITECT` 只能由 Owner 指定」的限制；改变已记录的路线仍只能由 Owner 要求。
+
 `ARCHITECT` 路线交付架构设计与结构性成果，不交付完整业务功能：
 
 ```text
-Owner 指定路线与基线
+TaskBuilder 判定路线（TB-ROUTE-1）并记录 Owner 授权的基线
 → TaskBuilder（contract.status=PENDING）
 → Analyst（A1/A2，Contract 限定结构交付）
 → Architect（D1 结构快照 → D2 Review Metadata）
@@ -114,7 +116,7 @@ Owner 指定路线与基线
 
 `ARCHITECT` 只能在 Task 与已批准 Contract 都限定为结构交付时使用。需要完整业务功能、数据库 Migration、未批准的 DB Schema 变更、新外部依赖或构建/部署模型变化时，Architect 停止并回交 Analyst/Owner，由 Owner 明确决定是否切换到 `COMPLEX`；切换后必须重新核对 Contract 与 Evidence，`ARCHITECT` 的 `CLEAN` 不得当作 `COMPLEX` 的 Cleaner 结论。
 
-Owner Checkpoint（`WAITING_FOR_OWNER_DECISION`）不是 Handoff：不结束当前 Session、没有 NEXT_ROLE，Owner 回复后原 Agent 继续。
+Owner Checkpoint（`WAITING_FOR_OWNER_DECISION`）不是跨角色 Handoff：不结束当前 Session，也不产生新的接收者。出站层按 `.agent/specs/WorkflowHandoffContract.md` §5 用 `NEXT_ROLE=OWNER` + `NEXT_ACTION=OWNER_DECISION` 标记该检查点，`HANDOFF_PROMPT=NONE`；这些字段不写入 `state.yaml`，Owner 回复后原 Agent 在同一 Session 继续。
 
 ## 6. 阶段关口（Gate）
 

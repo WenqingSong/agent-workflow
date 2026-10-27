@@ -685,6 +685,72 @@ class LifecycleTest(unittest.TestCase):
 
     # ---------- 工具自身的前置检查 ----------
 
+    def test_negative_scope_phase_and_evidence_sha(self) -> None:
+        """非法 staged scope、PROGRESS 式提交、V1/V2 混淆与无效 SHA 必须 FAIL。"""
+        state_path = f".agent/tasks/{TASK}/state.yaml"
+
+        # EVIDENCE 混入 state.yaml → FAIL（state.yaml 必须真的发生变化才会被 stage）
+        self.fx.write("internal/foo.go", "package internal\n")
+        self.fx.write(state_path, state_text(review_status="PENDING", review_target="HEAD"))
+        self.fx.add("internal/foo.go", state_path)
+        proc = self.fx.tool("commit-check", "--role", "Coder", "--task", TASK, "--mode", "evidence")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("state.yaml", proc.stdout)
+        self.fx._git(self.fx.work, "restore", "--staged", ".")
+        self.fx._git(self.fx.work, "checkout", "--", state_path)
+        (self.fx.work / "internal/foo.go").unlink()
+
+        # PROGRESS 式提交：Cleaner 夹带业务文件 → FAIL
+        self.fx.write("internal/progress.txt", "wip\n")
+        self.fx.add("internal/progress.txt")
+        proc = self.fx.tool("commit-check", "--role", "Cleaner", "--task", TASK, "--mode", "artifacts")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("超出", proc.stdout)
+        self.fx._git(self.fx.work, "restore", "--staged", ".")
+        (self.fx.work / "internal/progress.txt").unlink()
+
+        # OwnerGate 未区分 V1 / V2 → FAIL
+        owner_path = f".agent/tasks/{TASK}/owner-decision.md"
+        self.fx.write(owner_path, "# Owner Decision\n")
+        self.fx.add(owner_path)
+        proc = self.fx.tool("commit-check", "--role", "OwnerGate", "--task", TASK, "--mode", "artifacts")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("--phase", proc.stdout)
+        self.fx._git(self.fx.work, "restore", "--staged", ".")
+        (self.fx.work / owner_path).unlink()
+
+        # 无效 Evidence SHA：可移动引用必须拒绝
+        self.fx.state(review_status="PENDING", review_target="HEAD")
+        self.fx.add(state_path)
+        proc = self.fx.tool("commit-check", "--role", "Coder", "--task", TASK, "--mode", "metadata")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("40", proc.stdout)
+        self.fx._git(self.fx.work, "restore", "--staged", ".")
+        self.fx._git(self.fx.work, "checkout", "--", state_path)
+
+    def test_foreign_changes_do_not_block_own_commit(self) -> None:
+        """§3.3：其他角色的无关修改保留现场，不阻断本角色提交，也不得被提交。"""
+        foreign = ".agent/registry/analyst-notes.md"
+        self.fx.write(foreign, "# analyst work in progress\n")
+        c1 = self.make_c1()
+        show = self.fx._git(self.fx.work, "show", "--name-only", "--format=", c1).stdout
+        self.assertNotIn("analyst-notes.md", show, "他人修改不得被顺手提交")
+        handoff = self.fx.tool("handoff-check", "--role", "Coder", "--task", TASK)
+        self.assertEqual(handoff.returncode, 1, "他人现场未处置时不得 HANDOFF")
+        self.assertIn("dirty", handoff.stdout)
+        (self.fx.work / foreign).unlink()
+
+        # 本角色 scope 内的残留（未提交业务代码）仍必须 FAIL。
+        self.fx.state(review_status="PENDING", review_target=c1)
+        self.fx.add(f".agent/tasks/{TASK}/state.yaml")
+        self.fx.write("internal/leftover.go", "package internal\n")
+        proc = self.fx.tool("commit-check", "--role", "Coder", "--task", TASK, "--mode", "metadata")
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("范围内", proc.stdout)
+        (self.fx.work / "internal/leftover.go").unlink()
+        self.fx._git(self.fx.work, "restore", "--staged", ".")
+        self.fx._git(self.fx.work, "checkout", "--", f".agent/tasks/{TASK}/state.yaml")
+
     def test_tool_preflight_and_push_targets(self) -> None:
         pre = self.fx.tool("preflight", "--role", "Coder", "--task", TASK)
         self.assertEqual(pre.returncode, 0, pre.stdout + pre.stderr)
@@ -700,6 +766,60 @@ class LifecycleTest(unittest.TestCase):
             "push-check", "--role", "Analyst", "--task", TASK, "--mode", "registry"
         )
         self.assertEqual(registry.returncode, 0, registry.stdout)
+
+
+ROLE_PROMPTS = {
+    "TaskBuilder": ".agent/roles/TaskBuilderPrompt.md",
+    "Analyst": ".agent/roles/AnalystAgent.md",
+    "Architect": ".agent/roles/ArchitectAgent.md",
+    "Coder": ".agent/roles/CoderAgent.md",
+    "Cleaner": ".agent/roles/CleanerAgent.md",
+    "OwnerGate": ".agent/roles/OwnerGateAgent.md",
+    "Deliverer": ".agent/roles/DelivererAgent.md",
+}
+
+# 每个角色在自己的 Prompt 中必须出现的 commit 模式（工具的真实参数形态）。
+ROLE_COMMIT_MODES = {
+    "TaskBuilder": ["--mode bootstrap"],
+    "Analyst": ["--mode evidence", "--mode metadata", "--mode registry"],
+    "Architect": ["--mode evidence", "--mode metadata"],
+    "Coder": ["--mode evidence", "--mode metadata", "--mode forced"],
+    "Cleaner": ["--mode artifacts"],
+    "OwnerGate": ["--mode artifacts --phase v1", "--mode artifacts --phase v2"],
+    "Deliverer": ["--mode artifacts"],
+}
+
+
+class RoleWiringTest(unittest.TestCase):
+    """C4：自检工具必须真的接进七个角色的执行规范，而不只是存在于目录里。"""
+
+    def test_all_seven_roles_reference_the_tool(self) -> None:
+        for role, rel in ROLE_PROMPTS.items():
+            text = (REPO / rel).read_text(encoding="utf-8")
+            with self.subTest(role=role):
+                self.assertIn(".agent/specs/tools/git-lifecycle-check", text, rel)
+                self.assertIn(f"preflight --role {role}", text, rel)
+                self.assertIn(f"handoff-check --role {role}", text, rel)
+                self.assertIn("verify-remote", text, rel)
+                self.assertIn("push-check", text, rel)
+                self.assertIn("不替代 Gate", text, rel)
+                for mode in ROLE_COMMIT_MODES[role]:
+                    self.assertIn(mode, text, f"{rel} 缺少 {mode}")
+
+    def test_tool_is_executable_and_exposes_all_subcommands(self) -> None:
+        self.assertTrue(TOOL.is_file(), "缺少 .agent/specs/tools/git-lifecycle-check")
+        self.assertTrue(TOOL.stat().st_mode & 0o111, "git-lifecycle-check 必须可执行（100755）")
+        proc = run(["python3", str(TOOL), "--help"], REPO)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        for sub in ("preflight", "commit-check", "push-check", "verify-remote", "handoff-check"):
+            self.assertIn(sub, proc.stdout)
+
+    def test_danger_and_blocked_wording_kept_in_all_roles(self) -> None:
+        """DANGER / BLOCKED 的 NEXT_ROLE=NONE 语义不得被 Git 自检章节改写。"""
+        for role, rel in ROLE_PROMPTS.items():
+            text = (REPO / rel).read_text(encoding="utf-8")
+            with self.subTest(role=role):
+                self.assertIn("NEXT_ROLE=NONE", text, rel)
 
 
 if __name__ == "__main__":

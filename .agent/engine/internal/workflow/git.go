@@ -24,6 +24,10 @@ type Git interface {
 	ShowFile(ref, path string) (string, error)
 	// PathExistsAt 报告 path 在 ref 上是否存在。
 	PathExistsAt(ref, path string) (bool, error)
+	// CommitTouchesPath 报告 sha 这个 commit 自身是否改写（新增/修改/删除）了 path。
+	// 它区分「该快照就是这份证据」与「该快照只是继承了更早的历史文件」，
+	// 用于路线与 Review 证据形态的绑定，不用于判断文件内容是否合法。
+	CommitTouchesPath(sha, path string) (bool, error)
 	// RevParse 返回 ref 解析为 commit 后的完整 SHA。
 	RevParse(ref string) (string, error)
 	// CommitExists 报告 sha 是否为仓库中真实存在的 commit 对象。
@@ -117,6 +121,27 @@ func (g *ExecGit) PathExistsAt(ref, path string) (bool, error) {
 		return false, fmt.Errorf("git cat-file -e %s:%s: %w", ref, path, err)
 	}
 	return true, nil
+}
+
+// CommitTouchesPath 用 diff-tree 读取单个 commit 的变更路径。
+//
+// 使用 -m 保证 merge commit 也会与每个父提交比较（Evidence Commit 通常不是 merge，
+// 但这里不假设历史形状）。--no-renames 与其它 diff 判定保持一致：rename 会拆成
+// 源路径删除与目标路径新增两条记录，不会漏报。
+func (g *ExecGit) CommitTouchesPath(sha, path string) (bool, error) {
+	out, err := g.run(
+		"diff-tree", "--no-commit-id", "--no-renames", "--name-only", "-r", "-m", "--root",
+		sha, "--", path,
+	)
+	if err != nil {
+		return false, err
+	}
+	for _, line := range splitLines(out) {
+		if line == path {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (g *ExecGit) RevParse(ref string) (string, error) {
