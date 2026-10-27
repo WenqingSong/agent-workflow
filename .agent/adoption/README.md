@@ -93,6 +93,11 @@
 
 缺任一固定值、Commit 不匹配或真实 Gate 不通过时，工具拒绝替换宿主现有 binary。
 
+升级不会无条件替换现有 binary：未提供通过校验的新 binary 时保留原 binary。因此
+`workflow-check version` 报告的是**该 binary 的构建 Commit**，而“当前安装的是哪个
+分发包”以 `.agent/upstream.yaml` 的 `source.commit` 为准；两者在只更新源码文件的
+升级中可能不同，这是预期语义，不是漂移。
+
 ## Safety Model
 
 - 只写 `managed` 清单与事务生成的 `workflow.yaml` / `upstream.yaml` / binary；
