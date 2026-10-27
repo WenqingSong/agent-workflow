@@ -59,6 +59,9 @@ func run(args []string) int {
 			positional = append(positional, a)
 		}
 	}
+	// --root 允许相对路径；必须在这里归一化，否则后面用 filepath.Rel 比较相对 root
+	// 与绝对任务路径会误判「不在仓库根内」。
+	root = absRoot(root)
 
 	// version 是自描述命令：不依赖 --root、不读取 .agent/workflow.yaml，
 	// 也不参与任何 Gate 判定，因此必须在解析仓库根之前处理。
@@ -169,6 +172,7 @@ func runRoute(args []string, root string) int {
 	if root == "" {
 		root = findRoot()
 	}
+	root = absRoot(root)
 	git := &workflow.ExecGit{Root: root}
 	v := &workflow.Validator{Root: root, Git: git}
 
@@ -202,6 +206,18 @@ func printRouteReport(taskDir string, rep workflow.RouteReport) int {
 		fmt.Printf("ROUTE_ERROR  task=%s unknown status %q\n", task, rep.Result.Status)
 		return 2
 	}
+}
+
+// absRoot 把 --root 归一化为绝对路径；空值保持为空（由调用方解析仓库根）。
+// 相对路径按当前工作目录解析，与 Git 自身的行为一致。
+func absRoot(root string) string {
+	if root == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(root); err == nil {
+		return abs
+	}
+	return root
 }
 
 // findRoot 通过 git 定位仓库根，失败则回退到当前目录。

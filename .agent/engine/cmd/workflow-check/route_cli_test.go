@@ -61,6 +61,7 @@ func routeCLIRepo(t *testing.T, route, contract, complexity string) string {
 	git("config", "user.email", "t@e.c")
 	git("config", "commit.gpgsign", "false")
 	write("README.md", "# base\n")
+	write(".agent/workflow.yaml", "schema_version: 1\ngit:\n  integration_branch: develop\nresources: {}\n")
 	git("add", "-A")
 	git("commit", "-q", "-m", "baseline")
 	git("update-ref", "refs/remotes/origin/develop", git("rev-parse", "HEAD"))
@@ -149,5 +150,24 @@ func TestRunRouteNonV2State(t *testing.T) {
 	git("commit", "-q", "-m", "legacy")
 	if code := run([]string{"route", ".agent/tasks/demo", "--root", dir}); code != 2 {
 		t.Fatalf("非 V2 task 期望 exit 2，实际 %d", code)
+	}
+}
+
+// --root 允许相对路径：必须按当前工作目录解析，不能因相对/绝对混用而误判越界。
+func TestRunRouteRelativeRoot(t *testing.T) {
+	dir := routeCLIRepo(t, "NORMAL", "NOT_REQUIRED", "NORMAL")
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	rel, err := filepath.Rel(cwd, dir)
+	if err != nil {
+		t.Fatalf("rel: %v", err)
+	}
+	if code := run([]string{"route", ".agent/tasks/demo", "--root", rel}); code != 0 {
+		t.Fatalf("相对 --root 期望 exit 0，实际 %d", code)
+	}
+	if code := run([]string{"gate", "coder-start", ".agent/tasks/demo", "--root", rel}); code != 0 {
+		t.Fatalf("相对 --root 的 gate 期望 exit 0，实际 %d", code)
 	}
 }
