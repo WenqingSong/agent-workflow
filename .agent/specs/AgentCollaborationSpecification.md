@@ -92,19 +92,27 @@ Owner Checkpoint（`WAITING_FOR_OWNER_DECISION`）不是 Handoff：不结束当�
 
 ## 6. 阶段关口（Gate）
 
-每个角色正常 Handoff 前运行对应出口 Gate（详见 `docs/design/agent-workflow.md` §5）：
+Gate 是 Handoff 前的机械出站检查。角色 Handoff 前运行的 Gate 就是**下一角色的入口 Gate**；Gate 语义与实现以 `docs/design/agent-workflow.md` §12 为准，CLI 与 exit code 见 §11。
 
-| 角色      | 出口 Gate          | Handoff 目标 |
-| --------- | ------------------ | ------------ |
-| Analyst   | `coder-start`      | Coder        |
-| Coder     | `cleaner-start`    | Cleaner      |
-| Cleaner   | `owner-gate-start` | OwnerGate    |
-| OwnerGate | `delivery-start`   | Deliverer    |
-| Deliverer | `merge-ready`      | Owner        |
+### 6.1 逐角色交接矩阵
+
+| 路线 | 角色 | 入口 Gate | 本角色产出 Commit | Push | 出口 Gate | Handoff | 失败回退 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| NORMAL | TaskBuilder | 无（`TB-BRANCH-1` 预检） | 任务 Artifact 初始化（`contract.status=NOT_REQUIRED`） | 是 | `coder-start` | Coder | 修复本角色 Artifact 或 Git 收尾；超出 authority 则 `BLOCKED` |
+| NORMAL | Coder | `coder-start` | C1 实现快照 + C2 Review Metadata（`PENDING` / `target=C1`） | 是 | `cleaner-start` | Cleaner | 修实现与证据；Contract/Scope 问题 `BLOCKED` |
+| NORMAL | Cleaner | `cleaner-start` | CLEAN artifacts 或 CHANGES_REQUIRED artifacts | 是 | `owner-gate-start` / 无（退回） | OwnerGate / Coder | 补自身证据；实现缺陷 `CHANGES_REQUIRED` |
+| NORMAL | OwnerGate | `owner-gate-start` | `owner-decision.md` + `owner.*` | 是 | `delivery-start` / 无（REJECT） | Deliverer / Coder 或 Analyst | Owner 未决保持 `PENDING`；REJECT 持久化后退回 |
+| NORMAL | Deliverer | `delivery-start` | `delivery.md` + `delivery.*`（三 SHA 绑定） | 是 | `merge-ready` | Owner | `FAIL` / `BLOCKED` 持久化后退回 |
+| COMPLEX | TaskBuilder | 无（`TB-BRANCH-1` 预检） | 任务 Artifact 初始化（`contract.status=PENDING`） | 是 | 无（只读同步自检，不运行 `coder-start`） | Analyst | 修复 Artifact 或 Git 收尾 |
+| COMPLEX | Analyst | 无（TaskBuilder 直接交接） | A1 Contract Evidence + A2 Approval Metadata | 是 | `coder-start` | Coder | Owner 未批准保持 `PENDING`；REJECT / 实质修订重新形成 A1 |
+| COMPLEX | Coder | `coder-start` | C1 实现快照 + C2 Review Metadata | 是 | `cleaner-start` | Cleaner | 同 NORMAL |
+| COMPLEX | Cleaner | `cleaner-start` | CLEAN artifacts 或 CHANGES_REQUIRED artifacts | 是 | `owner-gate-start` / 无（退回） | OwnerGate / Coder | 四者一致性与 Contract 覆盖不足时 `CHANGES_REQUIRED` |
+| COMPLEX | OwnerGate | `owner-gate-start` | `owner-decision.md` + `owner.*` | 是 | `delivery-start` / 无（REJECT） | Deliverer / Coder 或 Analyst | 同 NORMAL |
+| COMPLEX | Deliverer | `delivery-start` | `delivery.md` + `delivery.*` | 是 | `merge-ready` | Owner | 同 NORMAL |
 
 `handoffReady`（非 detached、clean、remote 存在、local==remote）是每个出口 Gate 的共同前提。
 
-TaskBuilder 不在上表内：它的通用出口是 **Commit + Push + 远端同步核验**，不是 Gate。只有 `NORMAL` 路线以 `coder-start` 作为 Coder 入口 Gate；`COMPLEX` / `ARCHITECT` 在 `contract.status = PENDING` 时直接交 Analyst，不运行 `coder-start`（该 Gate 要求 Contract 为 `APPROVED` 或 `NOT_REQUIRED`）。
+TaskBuilder 不在 Gate 表中：它的通用出口是 **Commit + Push + 远端同步核验**，不是 Gate。只有 `NORMAL` 路线以 `coder-start` 作为 Coder 入口 Gate；`COMPLEX` / `ARCHITECT` 在 `contract.status = PENDING` 时直接交 Analyst，不运行 `coder-start`（该 Gate 要求 Contract 为 `APPROVED` 或 `NOT_REQUIRED`）。
 
 正常 HANDOFF 的统一前提是：
 
@@ -119,6 +127,20 @@ TaskBuilder 不在上表内：它的通用出口是 **Commit + Push + 远端同�
 
 角色得到业务结果（如 Cleaner 的 `CLEAN`、Deliverer 的 `PASS`）只是阶段结论，不等于本轮完成：必须先完成上述出站收尾并通过下一角色入口 Gate。Gate `FAIL` 时不结束 Session，继续完成本角色职责，超出本角色 authority 才输出 `BLOCKED`。Decision Checkpoint（`WAITING_FOR_OWNER_DECISION`）不是 Handoff，期间不得结束 Session。
 
+### 6.2 出站顺序
+
+所有路线的 Git 出站统一按以下顺序执行，不得颠倒：
+
+1. 本角色职责与产物完整落盘；
+2. 显式 stage 本角色 owned artifacts，`git diff --cached` 核对无越权文件；
+3. commit（内容 Evidence 与 Metadata 分两阶段，见各角色 Prompt）；
+4. 普通 push 当前 feature branch；
+5. `git rev-parse HEAD` == `git rev-parse origin/<current-feature>`，`git status --short` 为空；
+6. 运行下一角色入口 Gate；
+7. Gate `PASS` 后才输出 HANDOFF。
+
+「已提交」「已 push」「已写报告」都不构成 Gate 结论，也不构成 Handoff 依据。
+
 ## 7. 证据、基线与 Scope
 
 - TaskBuilder 记录任务开始时的 Git 基线和已有修改；经 `TB-BRANCH-1` 创建分支时，基线取 Owner 授权的起始分支与完整 SHA，不用实际 HEAD 反向覆盖授权值。
@@ -127,6 +149,16 @@ TaskBuilder 不在上表内：它的通用出口是 **Commit + Push + 远端同�
 - `CLEAN` 只对 `review.target`（immutable commit）有效。生产代码、测试或约束发生实质变化后必须复审。
 - Deliverer 验证的版本必须与最近一次 `CLEAN` 对应，并记录 `feature_head` 与 `develop_base`。
 - 未执行的检查标记为 `NOT_VERIFIED` 或 `NOT_EXECUTED`，并说明原因与影响。
+
+### 7.1 Evidence SHA 写入规范（F-03）
+
+新证据一律写入**完整 40 位 Commit SHA**。
+
+不得写入 `HEAD`、`HEAD~1`、分支名、Tag、`origin/<branch>` 或其他可移动 Git Ref；也不得写入无法唯一确定 Commit 的缩写。受此约束的字段至少包括 `contract.target`、`review.target`、`owner.review_target`、`delivery.review_target`、`delivery.feature_head`、`delivery.develop_base`，以及 Handoff 中声明的 C1 / C2 / A1 / A2 / feature HEAD。
+
+Engine 为保护历史兼容仍接受合法形态的 7～40 位十六进制短 SHA；这不意味着新任务可以主动使用短 SHA。所有引用必须先解析并核验真实身份：是真实 commit、位于当前 feature 历史中、并满足该字段的绑定语义。完整 SHA 等值比较用于判定绑定是否一致，不得因历史短 SHA 与完整 SHA 字面值不同而误判为不同绑定。
+
+历史任务中若存在可移动引用，属于升级迁移问题，由 Adoption / 升级说明处理；不得为兼容非法历史 Evidence 而放宽 Engine。
 
 需要突破 Scope 才能正确完成时，停止扩张并交 Owner 决定。不得覆盖来源不明的已有修改，也不得把别人的修改算作自己的成果。
 
@@ -170,7 +202,7 @@ Cleaner 审查测试可信度，在 `core-logic.md` 整理核心验证卡；Owne
 
 本节只适用于已激活的 Workflow Role Session（范围见 §1.1），不构成对宿主其他 Agent 或仓库级 Git 操作的通用规则；除 §11.1 的 TaskBuilder 窄例外外，不改变 Workflow Role 现有权限。
 
-- Agent 允许：`fetch / status / diff / log / show / rev-parse`、`switch` 到已存在且属于当前任务的分支、`pull --ff-only` 当前 feature。
+- Agent 允许：`fetch / status / diff / log / show / rev-parse`、`switch` 到已存在且属于当前任务的分支、`pull --ff-only` 当前 feature、显式 stage 本角色 owned artifacts、`commit`、普通 `push` 当前 feature branch（共享集成分支与 `main` 除外）。Commit 与 Push 是正常 Handoff 的必要动作，不是需要额外授权的例外。
 - Agent 禁止：删除/重命名 branch、merge feature→develop、`push --force`、`reset --hard`、`clean -fd`、`git add -A` / `git add .`、rebase 已发布历史、`commit --amend`、rewrite history。`push develop` 默认禁止——唯一例外是 Analyst 的 Registry-only develop commit（仅 `.agent/workflow.yaml` 已声明的 Registry 文件，见 §12.2）。
 - 创建 branch 默认禁止；唯一例外是 TaskBuilder 经 Owner 授权的当前任务初始分支创建（`TB-BRANCH-1`，见 §11.1）。
 - 这些 git 写约束是协议/Prompt 硬约束；shared develop 的机器级保护交给仓库 branch protection / 外部 Git 控制能力。`.agent/bin/workflow-check` 只读，不拦截 git 写命令。

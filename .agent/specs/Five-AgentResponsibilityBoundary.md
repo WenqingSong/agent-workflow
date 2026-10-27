@@ -67,7 +67,7 @@ Analyst 回答：复杂问题有哪些约束，可行方案是什么，哪些性
 - 比较少量真正可行的方案并给出推荐；
 - 明确业务不变量、错误语义和验证方法；
 - 起草 `contract.md`，请求 Owner Contract Decision；
-- Owner 确认后，准确记录最终决定（两段式提交：A1 contract 内容 → A2 写 `state.contract.status=APPROVED`、`state.contract.target=A1`）；
+- Owner 确认后，准确记录最终决定（两段式提交：A1 contract 内容 → A2 只写 `state.contract.status=APPROVED`、`state.contract.target=<A1 完整 SHA>`），随后 Commit + Push 当前 feature、核验远端同步并运行 `coder-start`，`PASS` 后才 HANDOFF Coder；Owner 未批准或拒绝时不得写 `APPROVED`，也不得改成 `NOT_REQUIRED` 绕过；
 - 作为长期 Design（`docs/design/*`）内容的主责：`Design Impact = NEW/UPDATE` 时，在 Contract 经 Owner `APPROVED` 后、Coder 实现前新增/更新对应 Design Artifact；
 - 读 `.agent/workflow.yaml` 确认已声明的 Shared Resource Kinds，再读对应 `.agent/registry/*` 派生候选资源，在 Contract APPROVED 后形成 Registry-only commit（仅含配置已声明的 Registry 文件）并 push `origin develop` 落实 `RESERVED`，然后验证 Reservation 真正进入 `origin/develop`；不得凭空自选编号，不得自行新增 resource kind 或修改 `.agent/workflow.yaml`。
 
@@ -91,7 +91,7 @@ Coder 回答：怎样在已确定的范围和约束内完成实现？
 - 修复 Cleaner 指定的 Finding 并提供回归证据；
 - 只使用 APPROVED Contract 中的已分配全局资源；新增需求走 Contract Revision，不得自行推断编号（含 `max+1`）。
 
-发起 Review Request（两段式提交）：C1（业务代码 + 测试）→ C2（只改 `state.yaml` 写入 `review.status=PENDING`、`review.target=C1`）。Cleaner 审 C1，不是 C2。
+发起 Review Request（两段式提交）：C1（业务代码 + 测试，先完成验证再提交）→ C2（只改 `state.yaml` 写入 `review.status=PENDING`、`review.target=<C1 完整 SHA>`；不得混入业务代码）。C1、C2 都必须 Commit 并 Push 当前 feature，确保工作区 clean 且 local == remote，再运行 `cleaner-start`，`PASS` 后才 HANDOFF Cleaner。Cleaner 审 C1，不是 C2。
 
 不负责：自行改变 Task 或已确认 Contract、修改 Finding 状态、宣布实现 `CLEAN`、写 `owner`/`delivery` 状态。
 
@@ -103,14 +103,17 @@ Cleaner 回答：完整相关变更是否满足任务，测试是否真的能发
 
 负责：
 
+- 开始前运行入口 Gate `cleaner-start`，确认 `review.status=PENDING`、`review.target` 是当前 feature 历史中的真实 commit，且 target 之后只含 Review-neutral artifacts；
 - 核对 Goal、Scope、Out of Scope、每项 AC 和已确认 Contract；
 - 当 `Design Impact = NEW/UPDATE` 时，验证 Task ↔ APPROVED Contract ↔ `docs/design/*` ↔ 最终 Implementation 四者一致；
+- COMPLEX 额外验证 Task ↔ Contract、Contract ↔ Design、Implementation ↔ Contract 一致，并确认测试与验收证据覆盖 Contract 的不变量与验证要求；不得因 Analyst 参与而新增或跳过 Gate；
 - 审查完整相关 Diff、业务正确性、安全、数据一致性、并发和错误处理；
 - 独立运行必要验证；
 - 为真实缺陷建立稳定 Finding，并复审修复；
 - 审查测试是否验证了结果，而不是只验证 Mock 或调用次数；
-- 通过后填写 `findings.md`、`core-logic.md`，并写 `state.review.status=CLEAN`（`review.target` 保持 C1 不变）；
+- 通过后填写 `findings.md`、`core-logic.md`，并写 `state.review.status=CLEAN`（`review.target` 保持 C1 完整 SHA 不变）；
 - `CLEAN` 只是审查结论，不等于完成：得到 `CLEAN` 后仍须 commit Cleaner-owned review artifacts、push 当前 feature、确认 working tree clean 且 remote synced，运行 `owner-gate-start` Gate，`PASS` 后才 HANDOFF OwnerGate（Cleaner 自己的 findings/core-logic/state commit 是 review-neutral tail，`review.target` 不前移）；
+- `CHANGES_REQUIRED` 也不是完成：必须把 Finding、`review.status=CHANGES_REQUIRED` 与下一步动作持久化，Commit + Push + 远端核验后退回 Coder；Coder 必须形成新的实现快照与新的 PENDING Review Target，旧 CLEAN 与旧结论不得复用；
 - 三边一致性检查 Registry ↔ Contract ↔ 实现，任一漂移 → `CHANGES_REQUIRED`。
 
 默认不修改生产代码或测试；发现问题交 Coder 修复。Cleaner 不改变任务标准，也不替 Owner 最终接受，不写 `owner` 状态（由 OwnerGate 负责）。
@@ -123,12 +126,15 @@ OwnerGate 回答：哪些核心机制真正决定业务正确性，怎样让 Own
 
 负责：
 
+- 开始前运行入口 Gate `owner-gate-start`；Gate `PASS` 只证明审查证据满足机器约束，不等于 Owner 已接受；
 - 读取 CLEAN review，提炼 1~3 个核心机制（CL-001……）；
 - 用简短中文解释给 Owner，回答 Owner 追问；
 - 请求 Owner 决策（`WAITING_FOR_OWNER_DECISION`，非 Handoff，同 Session 继续）；
-- Owner `ACCEPT / REJECT` 后，机械持久化到 `owner-decision.md` 与 `state.owner`（`owner.status` + `owner.review_target = review.target`）。
+- Owner 明确 `ACCEPT` 后，机械持久化 `owner-decision.md` 与 `state.owner`（`owner.status=ACCEPTED`、`owner.review_target=<review.target 完整 SHA>`），Commit + Push + 远端核验后运行 `delivery-start`，`PASS` 后才 HANDOFF Deliverer；
+- Owner 明确 `REJECT` 后，持久化真实拒绝理由与退回对象，Commit + Push + 远端核验后退回 Coder 或 Analyst，不运行 `delivery-start`；
+- Owner 尚未决定或答复含糊时保持 `owner.status=PENDING`，不交接、不代写 `ACCEPTED`。
 
-不负责：改业务代码、改 Contract、改 Review 结果、自行生成 `ACCEPTED`（必须来自 Owner 明确决定）。
+不负责：改业务代码、改 Contract、改 Review 结果、自行生成 `ACCEPTED`（必须来自 Owner 明确决定）。禁止以 `owner.status=NOT_REQUIRED` 绕过正常 Owner 决策。
 
 Owner 接受的是 Cleaner 已 CLEAN 的 **这个具体 snapshot**（`review.target`）。
 
@@ -140,13 +146,15 @@ Deliverer 回答：已经通过审查的里程碑，能否在要求的环境中�
 
 负责：
 
+- 开始前运行入口 Gate `delivery-start`；Gate `PASS` 只证明可以开始验收，不等于交付通过；
 - 确认交付版本与 Cleaner 的审查对象一致（`delivery.review_target = review.target`）；
-- 记录实际参与集成验证的 feature snapshot（`feature_head`）与当时 shared develop 基线（`develop_base`）；
+- 记录实际参与集成验证的 feature snapshot（`feature_head`）与当时 shared integration base（`develop_base`），三者均写完整 40 位 SHA；
 - 独立验证适用的构建、启动、API 主链路和真实依赖；
 - 核对重要数据结果，而不只看 HTTP 200；
-- 在 `delivery.md` 记录环境、结果、证据、未验证项和剩余风险。
+- 在 `delivery.md` 记录环境、结果、证据、未验证项和剩余风险；
+- 验收结论持久化后 Commit + Push 当前 feature、核验远端同步，再运行 `merge-ready`；只有 `merge-ready` `PASS` 才允许向 Owner 输出可集成结论。
 
-Deliverer 可使用临时目录、临时 worktree、detached HEAD 等本地集成环境验证 `develop_base + feature_head`，但禁止创建/推送永久 integration branch、禁止 push develop、禁止最终 merge。
+Deliverer 可使用临时目录、临时 worktree、detached HEAD 等本地集成环境验证 `develop_base + feature_head`，但禁止创建/推送永久 integration branch、禁止 push develop、禁止最终 merge，也不创建 Release。
 
 不负责：修生产代码、重新做完整 Diff Review、关闭 Cleaner Finding、改 Review 或 Owner Decision、替 Owner 接受。
 
@@ -154,7 +162,7 @@ Deliverer 可使用临时目录、临时 worktree、detached HEAD 等本地集�
 
 ## 9. 默认交接与 Gate
 
-每一角色正常 Handoff 前运行对应出口 Gate（`.agent/bin/workflow-check gate <name> <task>`）：
+每一角色正常 Handoff 前由本角色运行下一角色的入口 Gate（`.agent/bin/workflow-check gate <name> <task>`）：
 
 ```text
 Analyst   → gate coder-start      → HANDOFF Coder
@@ -163,6 +171,8 @@ Cleaner   → gate owner-gate-start → HANDOFF OwnerGate
 OwnerGate → gate delivery-start   → HANDOFF Deliverer
 Deliverer → gate merge-ready      → HANDOFF Owner
 ```
+
+每条 Handoff 前的统一出站顺序：显式 stage 本角色 owned artifacts → commit → push 当前 feature → 确认 working tree clean 且 local == `origin/<current-feature>` → 运行 Gate → `PASS` 才 HANDOFF。`CHANGES_REQUIRED` 与 Owner `REJECT` 的退回同样必须 Commit + Push，只是不经过下一角色入口 Gate。
 
 TaskBuilder 不在上表内：它的通用出口是 Commit + Push + 远端同步核验，不是 Gate。仅 `NORMAL` 路线以 `coder-start` 作为 Coder 入口 Gate（`contract.status = NOT_REQUIRED`、无共享 Registry 预留）；`COMPLEX` / `ARCHITECT` 在 `contract.status = PENDING` 时直接交 Analyst，不运行 `coder-start`。Analyst 批准 Contract 后，由后续角色按各自入口 Gate 继续。
 

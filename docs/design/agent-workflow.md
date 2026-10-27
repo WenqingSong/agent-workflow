@@ -256,6 +256,12 @@ Cleaner 审查的是 **C1**，而不是「Cleaner 开始工作时当前 HEAD」�
 | Review（INV-3 / INV-4） | `review.target` = C1 | Cleaner 真正审查的 immutable implementation Evidence Commit |
 | Delivery（INV-6） | `delivery.review_target` / `feature_head` / `develop_base` | 被验证的业务实现 / 实际参与集成的 feature snapshot / 验证时的 develop 基线 |
 
+### Evidence 字段的写入形态（F-03）
+
+新证据一律写入**完整 40 位 Commit SHA**。`contract.target`、`review.target`、`owner.review_target`、`delivery.review_target` / `feature_head` / `develop_base` 都不得写入 `HEAD`、`HEAD~1`、分支名、Tag、`origin/<branch>` 或其他可移动 Git Ref。
+
+Engine 为保护历史兼容仍接受合法的 7～40 位十六进制短 SHA（`resolveImmutableCommit`：形态校验 → 唯一解析 → 前缀一致性 → 返回完整 SHA）。这条兼容不构成新任务使用短 SHA 的许可；所有引用必须先解析并核验真实身份，绑定比较统一使用完整 SHA，避免历史短 SHA 与完整 SHA 因字面值不同被误判为不同绑定。历史任务中已存在的可移动引用属于 Adoption / 升级迁移问题，不在 Engine 内放宽。
+
 ---
 
 ## 8. Evidence Snapshot 为什么需要两阶段 Commit
@@ -274,6 +280,8 @@ Metadata Commit（只写 state.yaml，引用 Evidence Commit 的 SHA）
 - Coder：C1（业务代码 + 测试）→ C2（只写 `state.review.status=PENDING`、`state.review.target=C1`）。
 
 Metadata Commit 是「事后引用」Evidence Commit 的 SHA，因此 SHA 可以精确落盘。Cleaner 审 C1，不是 C2。
+
+`A1` / `C1` 在这里是 Evidence Commit 的符号名；写入 `state.yaml` 时必须是该 commit 的**完整 40 位 SHA**，不能是 `HEAD`、分支名、Tag 或短 SHA（见 §7 Evidence 字段的写入形态）。
 
 ---
 
@@ -390,10 +398,38 @@ Gate 是 Handoff 前的机械出站检查。每个 Gate 回答一个「现在能
 | `coder-start` | 保证 Coder 开始前 Contract / Resource 已合法 | `blocked.active=false` + `handoffReady` + Contract 有效 + Resources 授权 |
 | `cleaner-start` | 保证 Cleaner 审的是稳定 Implementation Evidence | `blocked.active=false` + `review.status=PENDING` + target 真实且在 feature 历史 + `handoffReady` + review tail 仅 neutral |
 | `owner-gate-start` | 保证 Cleaner 已完成 CLEAN 持久化和 Git 收尾 | `blocked.active=false` + `handoffReady` + `review.status=CLEAN` + cleanValidity PASS |
-| `delivery-start` | 保证 Owner 已绑定当前 CLEAN review | `blocked.active=false` + Contract/Resources 有效 + cleanValidity + `owner.status=ACCEPTED` + `owner.review_target==review.target` + `handoffReady` |
+| `delivery-start` | 保证 Owner 已绑定当前 CLEAN review | `blocked.active=false` + Contract/Resources 有效 + cleanValidity + `owner.status=ACCEPTED`（`NOT_REQUIRED` 不构成接受事实）+ `owner.review_target==review.target` + `handoffReady` |
 | `merge-ready` | 只表示 feature 已满足交给 Owner 集成的机械条件，**不代表 Agent 可以自行 merge** | `blocked.active=false` + 上述全部 + `delivery.status=PASS` + delivery 三个 SHA 绑定 + develop/feature 新鲜度 + `handoffReady` |
 
 **`blocked` 对五个 Gate 一律生效**：每个 Gate 在 schema 校验之后、其他昂贵检查之前，先执行同一条 `blocked.active` 拦截，`Actual` / `Expected` 完全一致，只有 Reason 描述各自被禁止的动作。因此 DANGER 停机不需要新增 Gate，也无法靠换 Gate 绕过：`blocked.active=true` 时没有任何一个入口能 PASS。
+
+### 12.1 路线级 Gate 顺序
+
+Gate 由当前角色在出站时运行，是**下一角色的入口检查**。
+
+```text
+NORMAL：
+TaskBuilder（Commit + Push + 远端同步核验，不运行 Gate）
+  → coder-start    → Coder
+  → cleaner-start  → Cleaner
+  → owner-gate-start → OwnerGate
+  → delivery-start → Deliverer
+  → merge-ready    → Owner
+
+COMPLEX：
+TaskBuilder（contract.status=PENDING；Commit + Push + 只读同步自检，不运行 coder-start）
+  → Analyst：A1 Contract Evidence → A2 Approval Metadata（Commit + Push）
+  → coder-start    → Coder
+  → cleaner-start  → Cleaner
+  → owner-gate-start → OwnerGate
+  → delivery-start → Deliverer
+  → merge-ready    → Owner
+```
+
+- `coder-start` 要求 Contract 为 `APPROVED` 或 `NOT_REQUIRED`，因此 `COMPLEX` / `ARCHITECT` 的 `PENDING` 阶段不得运行它，也不得为了通过它把 Contract 改成 `NOT_REQUIRED`。
+- `owner-gate-start` `PASS` 只证明 CLEAN 与 Git 收尾满足机器约束，**不等于 Owner 已经接受**；OwnerGate 必须进入明确的 Owner 决策阶段。
+- `delivery-start` `PASS` 只表示可以开始验收；`merge-ready` 才是最后一个 Agent Gate，`PASS` 之后才允许向 Owner 输出可集成结论。
+- `ARCHITECT` 为预留路线：TaskBuilder 出口与 `COMPLEX` 相同（`PENDING` → Analyst）。其角色与独立审查路径不由本轮定义，也不得被删除或降级为 `NORMAL`。
 
 ---
 

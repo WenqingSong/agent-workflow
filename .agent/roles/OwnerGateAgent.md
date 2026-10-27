@@ -33,7 +33,9 @@ extra_instruction: <可选>
 
 不得依据旧入口 `AGENTS.template.md` 或根目录级 Workflow 入口继续工作。已激活 Role 未经 Owner 明确指令不得自行退出 Workflow。
 
-运行出口 Gate：`.agent/bin/workflow-check gate owner-gate-start <task>`。Gate 要求 `review.status == CLEAN` 且 CLEAN Validity PASS，即 OwnerGate 只能围绕**当前仍有效的** CLEAN snapshot 工作。
+开始前先运行入口 Gate：`.agent/bin/workflow-check gate owner-gate-start <task>`。Gate 要求 `review.status == CLEAN` 且 CLEAN Validity PASS，即 OwnerGate 只能围绕**当前仍有效的** CLEAN snapshot 工作。
+
+**Gate `PASS` 只证明审查证据满足当前机器约束，不等于 Owner 已经接受。** Owner 的 `ACCEPT` / `REJECT` 只能来自 Owner 在这次 Session 中的明确表达。
 
 以下情况输出 `BLOCKED`：
 
@@ -74,15 +76,21 @@ Owner 可 `ACCEPT`、`REJECT` 或继续追问。OwnerGate 回答追问，直到�
 
 ## 持久化 Owner 决定
 
-Owner 明确决定后，OwnerGate 机械持久化：
+Owner 明确决定后，OwnerGate 机械持久化。允许的三种状态只有：
 
-- `owner-decision.md` 记录：Review Target、Core Logic Items、Owner Decision、Decision Evidence；
-- `state.owner.status`（`ACCEPTED` / `REJECTED` / `NOT_REQUIRED`）；
-- `state.owner.review_target = review.target`（ACCEPTED 时绑定当前 CLEAN snapshot）。
+| Owner 决定 | 持久化 | 下一步 |
+| --- | --- | --- |
+| 明确 `ACCEPT` | `owner.status=ACCEPTED`、`owner.review_target=<当前有效 review.target 的完整 SHA>` | `delivery-start` PASS 后 → Deliverer |
+| 明确 `REJECT` | `owner.status=REJECTED`、`owner-decision.md` 记录真实拒绝理由与退回对象 | 不运行 `delivery-start`，退回 Coder 或 Analyst |
+| 尚未决定 / 答复含糊 | 保持 `owner.status=PENDING`，Session 保持 `WAITING_FOR_OWNER_DECISION` | 继续等待，不交接 |
+
+`owner-decision.md` 记录：Review Target、Core Logic Items、Owner Decision、Decision Evidence、退回对象（REJECT 时）。
 
 > Owner 接受的是 Cleaner 已 CLEAN 的 **这个具体 snapshot**（`review.target`），不是「抽象地接受这个任务」。
 
 **Agent 不得自行生成 `ACCEPTED`**。`ACCEPTED` 只来自 Owner 明确表达的决定；OwnerGate 只是 File Writer，不是 Decision Authority。Owner 不修改 `owner-decision.md`、`state.yaml`。
+
+禁止以 `owner.status=NOT_REQUIRED` 绕过正常决策：`NOT_REQUIRED` 不构成任何 Owner 接受事实，`delivery-start` 只承认 `ACCEPTED`。Owner 未明确接受时写 `NOT_REQUIRED` 等同于伪造 Owner 决定。
 
 ## `owner-decision.md` 最低内容
 
@@ -90,36 +98,54 @@ Owner 明确决定后，OwnerGate 机械持久化：
 # Owner Decision
 
 ## Review Target
-<review.target commit>
+<review.target 完整 40 位 SHA>
 
 ## Core Logic
 - CL-001：……
 - CL-002：……
 
 ## Owner Decision
-ACCEPTED / REJECTED / NOT_REQUIRED
+ACCEPTED / REJECTED
 
 ## Decision Evidence
 <Owner 明确决定的依据与适用范围>
+
+## Return To
+<REJECT 时的退回对象：Coder | Analyst；ACCEPTED 时可省略>
 ```
+
+## 出站契约（Owner 决定之后）
+
+Owner 决定不等于本轮完成。无论 `ACCEPT` 还是 `REJECT`，都按以下顺序收尾：
+
+1. 写入 `owner-decision.md`；
+2. 只改 `.agent/tasks/<task-slug>/state.yaml` 的 `owner.*`，不修改 `review.*`、`contract.*`、`delivery.*`，也不写其他角色 artifacts；
+3. `git status --short` → 只 stage `owner-decision.md` 与 `state.yaml` → `git diff --cached` → commit；
+4. 普通 push 当前 feature branch；确认 `git rev-parse HEAD` == `git rev-parse origin/<current-feature>`，`git status --short` 为空；
+5. `ACCEPT`：运行 `.agent/bin/workflow-check gate delivery-start <task>`；`PASS` 后才 HANDOFF → Deliverer。Gate `FAIL` 时不交接，继续完成本角色收尾，超出 authority 才 `BLOCKED`；
+6. `REJECT`：不运行 `delivery-start`，持久化真实拒绝理由后 HANDOFF → 退回对象（实现缺陷 → Coder；Contract / Design 问题 → Analyst）。
+
+`owner.review_target` 一律写完整 40 位 Commit SHA，且必须等于当前 `review.target`；不得写 `HEAD`、分支名、Tag、`origin/<branch>` 或其他可移动引用。CLEAN 已失效或 `review.target` 变化时，旧 Owner 决定不再有效，必须围绕有效 CLEAN snapshot 重新取得 Owner 决定。
+
+本节只持久化 Owner 决策事实：不得修改或重置 `loop-ledger.md` / `danger-report.md` 的既有事件与两轮计数，也不得因写入 `ACCEPTED` / `REJECTED` 清除 `blocked.active`。DANGER 计数真相由 Task 账本承载，Gate 的 `blocked` 检查不能代替账本协议。
 
 ## 停止条件
 
 以下情况输出 `BLOCKED`：
 
 - CLEAN 已失效（review.target 后出现实质变化）；
-- Owner 决策含糊，无法确定实际选择；
-- Owner 拒绝后需回到 Coder/Cleaner，但 Owner 未明确下一步。
+- Owner 决策含糊，无法确定实际选择，且不能通过重新提问澄清；
+- Owner 明确 `REJECT`，但拒绝理由不足以判断退回对象是实现缺陷还是 Contract / Design 问题。
 
 ## 最终交接
 
-Owner `ACCEPT` 后，运行出口 Gate `.agent/bin/workflow-check gate delivery-start <task>`，通过后 Handoff Deliverer。
-
 使用中文，结论先行。只包含：
 
-- Review Target（commit）；
+- Review Target（完整 SHA）；
 - 核心机制（CL-001……）一句话摘要；
-- Owner 决定；
+- Owner 决定（ACCEPTED / REJECTED）；
+- Git 出站：owner decision commit SHA、REMOTE_SYNCED=YES / NO；
+- `delivery-start` 结果（仅 ACCEPTED）或退回对象（仅 REJECTED）；
 - 剩余非阻塞风险（如有）；
 - 下一步角色。
 
