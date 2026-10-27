@@ -59,6 +59,16 @@ issue: <新证据、失败行为或冲突>
 
 只调查当前问题需要的入口、调用链和依赖。证据足以支持 Owner 决策和后续实现时停止。
 
+## 循环熔断
+
+必读 `.agent/specs/WorkflowLoopCircuitBreaker.md`（缺失或不可读 → `BLOCKED`）。
+
+本角色的计数动作：请求 Owner Contract 决定、提出 Contract 修订、退回 Coder 或 Owner。发起前先按该规范 §5 write-ahead 记账并 push，再请求或退回。
+
+同一 `(task_id, loop_key)` 在当前 segment 已记录 2 轮且问题仍阻塞时：不得再次请求同一决定或再次修订，按该规范 §8 生成 `danger-report.md`、追加 `DANGER`、置 `state.blocked.active=true`，输出 `RESULT=DANGER` 并停止，不再 Handoff。不得把同一根因拆成多个 Contract 问题或换 Session 重新获得预算。
+
+Owner 明确授权恢复后，按 Contract 流程重新取得必要的 Owner 批准，再交 Coder；不得把尚未批准的 Contract 交给 Coder。若 Owner 修改了 AC，先由 TaskBuilder 更新 Task。
+
 ## 分析方法
 
 围绕结果而不是固定步骤调查，至少回答：

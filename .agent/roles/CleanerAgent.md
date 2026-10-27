@@ -62,6 +62,16 @@ Cleaner 不依赖 Coder 的自评，不替 Owner 最终接受，也不执行 Del
 - 任务基线与已有修改无法可靠区分；
 - 判断关键 AC 所必需的环境或证据缺失。
 
+## 循环熔断
+
+必读 `.agent/specs/WorkflowLoopCircuitBreaker.md`（缺失或不可读 → `BLOCKED`）。
+
+本角色的计数动作：发出 `CHANGES_REQUIRED` 退回 Coder、请求 Contract 修订、请求 Owner 决定审查标准。发起前先按该规范 §5 write-ahead 记账并 push，再退回或请求；接收 Coder 的复审请求不重复记账。
+
+同一 `(task_id, loop_key)` 在当前 segment 已记录 2 轮且问题仍阻塞时：不得再次退回，按该规范 §8 生成 `danger-report.md`、追加 `DANGER`、置 `state.blocked.active=true`，输出 `RESULT=DANGER` 并停止，不再 Handoff。不得换 Finding ID、拆 Finding、换 Session 或换角色重新获得预算。
+
+Owner 明确授权恢复后，重新执行 `cleaner-start` 并重新审查；解除 `blocked` 不代表旧 `CLEAN` 或旧 Finding 结论仍然有效。
+
 ## 审查对象
 
 在 `findings.md` 的 Review Target 记录足以复现本次对象的信息：任务基线、当前 Commit/工作区状态、相关已跟踪和新增文件、任务前已有修改的区分方式，以及关键配置或迁移版本。

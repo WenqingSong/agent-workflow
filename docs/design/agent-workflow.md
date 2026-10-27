@@ -65,7 +65,7 @@ Owner 不是第七个 Agent，而是整个 Workflow 的 **Decision Authority + S
 
 | 角色 | 回答的问题 | 输入 | 主要职责 | 负责的 Artifact | Authority | 明确禁止 | 完成条件 | 下一角色 |
 |---|---|---|---|---|---|---|---|---|
-| **TaskBuilder** | 交付什么、怎样判断完成 | Owner 需求 | 把需求整理成可执行、可验收的 `task.md` | `task.md`、`state.yaml` 初始结构 | 定义任务边界与路由 | 写生产代码；创建/删除/重命名 branch；替 Owner/Analyst 作关键决定 | `task.md` + 初始 `state.yaml` + 明确路由 | Analyst（COMPLEX）或 Coder（NORMAL） |
+| **TaskBuilder** | 交付什么、怎样判断完成 | Owner 需求 | 把需求整理成可执行、可验收的 `task.md` | `task.md`、`state.yaml` 初始结构 | 定义任务边界与路由；受控初始分支创建（§3 例外，P03 定义细则） | 写生产代码；删除/重命名 branch；受控例外之外的分支操作；替 Owner/Analyst 作关键决定 | `task.md` + 初始 `state.yaml` + 明确路由 | Analyst（COMPLEX）或 Coder（NORMAL） |
 | **Analyst** | 有哪些约束、可行方案、必须保持什么性质 | `task.md` | 调查约束、出方案、写 Contract、派生资源、沉淀长期 Design | `contract.md`、`docs/design/*`、`state.contract`、`state.resources` | **唯一** Registry-only develop mutation authority | 改生产代码/测试；批准自己的推荐；改 shared develop 其他内容 | Contract APPROVED + Registry Reservation 落地 + 两段式提交 | Coder |
 | **Coder** | 怎样在既定范围内完成实现 | `task.md` + APPROVED `contract.md` | 实现 AC、写测试、发起 Review Request | 业务代码、migration、tests、`state.review`（PENDING） | 在 feature 内实现 | 自行改 Contract/Task；写 `CLEAN`/`owner`/`delivery`；自行推断资源编号 | 实现 + 两段式提交（C1 + C2） | Cleaner |
 | **Cleaner** | 完整变更是否满足任务、测试是否可信 | `task.md` + Contract + C1 | 独立审查、写 Finding、整理核心逻辑、给出 CLEAN | `findings.md`、`core-logic.md`、`state.review`（CLEAN） | 审查结论 | 默认不改生产代码/测试；写 `owner` 状态；替 Owner 最终接受 | CLEAN + artifacts commit/push + `owner-gate-start` PASS | OwnerGate |
@@ -83,6 +83,8 @@ Owner 保留四类真正需要人判断的职责：Task / Branch Boundary、Cont
 ### Owner 控制区
 
 1. **Task / Feature Branch Lifecycle**：创建 feature branch、删除 branch、重命名 branch、branch boundary 决策。
+   - **受控初始分支例外**（已批准的 P00-R1 契约，V3.1）：TaskBuilder 在任务初始化时可以在受控条件下创建该任务自己的初始 feature branch。它不是通用分支权限，触发条件、允许的命令序列、拒绝条件与证据要求由 P03 在 `.agent/roles/TaskBuilderPrompt.md` 与 `.agent/specs/AgentCollaborationSpecification.md` 中定义。
+   - 本节只同步设计语义，不复制 P03 的规则文本，也不把例外扩大为「Agent 可自由创建 / 删除 / 重命名分支」。除此之外，分支生命周期仍是 Owner Authority。两处文本的一致性由集成检查点核对。
 2. **Shared Integration**：feature → develop、merge 时机、merge 顺序、merge / squash 策略、最终 integration 决策。
 
 ### Agent Autonomous Zone
@@ -289,6 +291,8 @@ Evidence Snapshot 之后可以存在**有限**的 metadata commit，但必须严
 .agent/tasks/<task>/core-logic.md
 .agent/tasks/<task>/owner-decision.md
 .agent/tasks/<task>/delivery.md
+.agent/tasks/<task>/loop-ledger.md
+.agent/tasks/<task>/danger-report.md
 ```
 
 ### Delivery-neutral tail（`feature_head` 之后允许，更窄）
@@ -296,19 +300,25 @@ Evidence Snapshot 之后可以存在**有限**的 metadata commit，但必须严
 ```text
 .agent/tasks/<task>/state.yaml
 .agent/tasks/<task>/delivery.md
+.agent/tasks/<task>/loop-ledger.md
+.agent/tasks/<task>/danger-report.md
 ```
+
+`loop-ledger.md` 与 `danger-report.md` 是 V3.1 循环熔断的证据文件（§31）。它们进入两条 Tail 的原因不同：Review Tail 允许 CLEAN 之后继续记录循环，Delivery Tail 允许 Delivery PASS 之后记录 DANGER 与 Owner 授权的恢复动作。两者都是**精确文件名 + 当前 Task 根目录**豁免，不扩大到其他目录、其他 Task 或本 Task 子目录。
 
 ### 判定逻辑（以真实代码为准）
 
 - `isReviewSubstantial(task, path)` = `!isReviewNeutral(task, path)`，即 default-deny：路径不在「本 task 目录 + 白名单文件名」内，一律判 substantive。
 - 其他目录、其他 task 的同名文件（如 `.agent/tasks/other/state.yaml`、`docs/design/state.yaml`、`.agent/registry/state.yaml`）一律 substantive。
 - `.go`、`.sql`、业务测试修改、业务设计修改都属于 substantive change。一旦出现，旧 `review.target` 的 CLEAN 就不再有效（INV-4，机械失效，不保存 STALE）。
+- **Git Diff 禁用 rename detection**：review tail 与 delivery tail 的判定都使用 `git diff --no-renames --name-only`。Git 默认把 `src/keep.go → .agent/tasks/<task>/findings.md` 折叠成单一目标路径，会让生产代码「消失」在 Tail 中；禁用后同一次 rename 同时暴露源路径删除与目标路径新增，default-deny 会分别拒绝。该选项只让变更路径集合更完整，不会漏报。
+- **Review Target 的祖先验证**：`review.target` 必须解析为不可变 commit，并且是当前 feature HEAD 的祖先或同一 commit。Tree Diff 为空只说明两棵树相同，不能证明 target 属于当前 feature 历史；被历史改写孤儿化的 target 即使树完全一致也必须判 CLEAN 无效。`cleaner-start`、`owner-gate-start`、`delivery-start`、`merge-ready` 复用同一实现，四个 Gate 的语义一致。
 
 ---
 
 ## 10. 核心不变量（INV-1 ~ INV-7）
 
-- **INV-1 Shared Branch Authority**：Only Owner mutates shared develop（branch 生命周期与最终 feature→develop integration）。Agent 不创建任务 branch、不最终 merge、不 push develop——**唯一例外**是 Analyst 的 Registry-only develop commit（仅 `.agent/workflow.yaml` 声明的 Registry 文件，当前 my-shop 为 `.agent/registry/migrations.md` 与 `.agent/registry/error-codes.md`）。
+- **INV-1 Shared Branch Authority**：Only Owner mutates shared develop（branch 生命周期与最终 feature→develop integration）。Agent 不删除或重命名 task branch、不最终 merge、不 push develop。两个**窄例外**：Analyst 的 Registry-only develop commit（仅 `.agent/workflow.yaml` 声明的 Registry 文件，当前 my-shop 为 `.agent/registry/migrations.md` 与 `.agent/registry/error-codes.md`）；TaskBuilder 的受控初始分支创建（§3，细则由 P03 定义）。受控例外不构成通用分支权限。
 - **INV-2 Implement Authorization**：Coder 开始前 Contract valid + 每个 Shared Resource Reservation 由 `origin/<integration-branch>` 上对应的 Registry 授权（value 存在、owner 与当前 Task 一致、status 为 RESERVED/ACTIVE）。
 - **INV-3 Immutable Review**：Cleaner 只能 CLEAN 明确 immutable commit，不能 CLEAN working tree。
 - **INV-4 Review Freshness**：任何 substantive change 使旧 CLEAN 自动失效；不保存 STALE。
@@ -378,10 +388,12 @@ Gate 是 Handoff 前的机械出站检查。每个 Gate 回答一个「现在能
 | Gate | 为什么存在 | 关键前置 |
 |---|---|---|
 | `coder-start` | 保证 Coder 开始前 Contract / Resource 已合法 | `blocked.active=false` + `handoffReady` + Contract 有效 + Resources 授权 |
-| `cleaner-start` | 保证 Cleaner 审的是稳定 Implementation Evidence | `review.status=PENDING` + target 真实且在 feature 历史 + `handoffReady` + review tail 仅 neutral |
+| `cleaner-start` | 保证 Cleaner 审的是稳定 Implementation Evidence | `blocked.active=false` + `review.status=PENDING` + target 真实且在 feature 历史 + `handoffReady` + review tail 仅 neutral |
 | `owner-gate-start` | 保证 Cleaner 已完成 CLEAN 持久化和 Git 收尾 | `blocked.active=false` + `handoffReady` + `review.status=CLEAN` + cleanValidity PASS |
-| `delivery-start` | 保证 Owner 已绑定当前 CLEAN review | Contract/Resources 有效 + cleanValidity + `owner.status=ACCEPTED` + `owner.review_target==review.target` + `handoffReady` |
-| `merge-ready` | 只表示 feature 已满足交给 Owner 集成的机械条件，**不代表 Agent 可以自行 merge** | 上述全部 + `delivery.status=PASS` + delivery 三个 SHA 绑定 + develop/feature 新鲜度 + `handoffReady` |
+| `delivery-start` | 保证 Owner 已绑定当前 CLEAN review | `blocked.active=false` + Contract/Resources 有效 + cleanValidity + `owner.status=ACCEPTED` + `owner.review_target==review.target` + `handoffReady` |
+| `merge-ready` | 只表示 feature 已满足交给 Owner 集成的机械条件，**不代表 Agent 可以自行 merge** | `blocked.active=false` + 上述全部 + `delivery.status=PASS` + delivery 三个 SHA 绑定 + develop/feature 新鲜度 + `handoffReady` |
+
+**`blocked` 对五个 Gate 一律生效**：每个 Gate 在 schema 校验之后、其他昂贵检查之前，先执行同一条 `blocked.active` 拦截，`Actual` / `Expected` 完全一致，只有 Reason 描述各自被禁止的动作。因此 DANGER 停机不需要新增 Gate，也无法靠换 Gate 绕过：`blocked.active=true` 时没有任何一个入口能 PASS。
 
 ---
 
@@ -459,7 +471,8 @@ Handoff 是「**当前角色结束，把控制权正式交给下一个角色**�
 它**不是**：
 
 - 「我暂时需要 Owner 回答一个问题」（那是 Decision Checkpoint）；
-- 「我暂时需要 Owner 做一次 branch 操作」（那是 Owner Action，非 Handoff）。
+- 「我暂时需要 Owner 做一次 branch 操作」（那是 Owner Action，非 Handoff）；
+- 「同一根因已经两轮，必须停下」（那是 DANGER 停机，输出 `RESULT=DANGER`，不交接下一角色）。
 
 正常 Handoff：当前 Session 到此结束。下一角色：新开独立 Session。如果未来流程再次回到同一个角色，也是新的 Session。
 
@@ -492,6 +505,8 @@ Owner-only 动作（例如 Owner 创建 / 切换 feature branch）发生在**角
 `blocked`（`state.yaml` 中的 `active / by / reason`）应用于：当前角色真的无法继续，且不能通过简单 Decision Checkpoint / Owner Action 恢复。
 
 不要把所有「需要 Owner 做一下动作」都写成 BLOCKED Handoff。BLOCKED 是正交阻塞事实，不是生命周期阶段。
+
+V3.1 起 `blocked` 还承担**循环熔断停机**（§31）：同一根因的两轮预算耗尽时，DANGER 协议把 `blocked.active` 置为 `true` 并停止 Workflow。该路径不新增状态字段，也不改变 `blocked` 的语义——它仍然是「真实阻塞事实」，只是由协议而非 Gate 写入。解除 `blocked` 只表示恢复条件成立，**不**使旧 Review / Owner / Delivery 结论重新有效。
 
 ---
 
@@ -601,6 +616,8 @@ delivery.develop_base   # 验证时 shared develop 基线
 3. 当前 `origin/develop == delivery.develop_base`。
 
 `origin/develop` 前进后，旧 PASS 自动失去 Merge Ready 效力。
+
+DANGER 恢复同样受这条规则约束：解除 `blocked`、补记 `loop-ledger.md` / `danger-report.md` 之后，若 `delivery.feature_head..remote feature HEAD` 之间出现了这两个证据文件之外的变更，或 `origin/develop` 已前进，旧 Delivery PASS 仍然失效，必须重新执行 `delivery-start` 并重新绑定三个 SHA。Neutral Tail 只豁免证据文件本身，不豁免实质变化。
 
 ---
 
@@ -737,6 +754,41 @@ V3.1 的隔离方式：
 Engine 影响：**无**。`workflow-check` 不读取任何角色 Markdown 或 Directive，因此本隔离不改变 CLI、Gate、State、Config 与 Registry 行为。
 
 精确的激活条件、缺失处理与退出规则只在 `.agent/specs/WorkflowAgentDirective.md` 维护，本文不复制。
+
+---
+
+## 31. 循环熔断（V3.1）
+
+### 为什么需要
+
+长任务里真正拖垮流程的不是单次失败，而是**同一根因的阻塞往返**：Coder 修一版、Cleaner 退回、Owner 改一次决定、Contract 再修订，几轮之后没人能说清「这个问题已经问过多少次、还该不该继续」。V3 原有的 `blocked` 只能表达「现在卡住了」，不能表达「已经卡过两轮，第三轮不应再发生」。
+
+V3.1 的应对是**两轮预算 + 可追溯账本 + 原子停机**，而不是新的状态机：
+
+- 计数键是 `(task_id, loop_key)`，`loop_key` 由问题类别与稳定语义根因组成；
+- 默认每个 segment 允许 2 次 `REQUEST` 往返，第 3 次发起前必须 DANGER；
+- 账本 `.agent/tasks/<task>/loop-ledger.md` 只追加 `REQUEST` / `DANGER` / `CLOSE` / `RESET` 事件；
+- DANGER 报告 `.agent/tasks/<task>/danger-report.md` 固定记录两轮证据、真实状态、最小待决问题与允许的恢复方式；
+- 停机复用 `blocked.active=true`，五个 Gate 一律拒绝；
+- 只有 Owner 明确授权才能 `CLOSE` / `RESET`；含糊回复不解除 `blocked`。
+
+### 为什么不做成新状态机
+
+- **不新增 State Schema**：`blocked` 已有 `active / by / reason`，足够表达停机；账本不是第二状态权威，`state.yaml` 仍是唯一机器事实源，二者冲突时以 `blocked` 为准。
+- **不新增 Gate**：五个 Gate 已经统一检查 `blocked`，再加一个「loop gate」只会增加绕过面。
+- **不做调度器**：谁发起、谁记账、谁停机的责任落在角色协议上，Engine 保持只读。
+
+### 诚实的验证边界
+
+`workflow-check` 不读取这两个文件，也不解析账本。Engine 能机械保证的只有：
+
+1. `blocked.active=true` 时五个 Gate 全部 FAIL；
+2. 这两个文件在**当前 Task 根目录**内属于 Review-neutral / Delivery-neutral，记录循环不会破坏 CLEAN 或合法 Delivery Tail；
+3. 其他路径（生产代码、测试、其他 Task 同名文件、本 Task 子目录同名文件）仍是 substantive change。
+
+Engine **不能**保证：账本 append-only、轮次真实、根因归类正确、DANGER 报告未编造、跨 Session 一定重新读取账本。这些是 Prompt / Spec 约束，依赖角色遵守与 Review 复核，不能宣称为机器级限流。
+
+精确的 loop_key 构造、去重指纹、write-ahead 步骤、账本字段、DANGER 报告内容与 Owner 恢复流程只在 `.agent/specs/WorkflowLoopCircuitBreaker.md` 维护，本文不复制。
 
 ---
 
