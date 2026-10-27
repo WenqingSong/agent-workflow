@@ -25,7 +25,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -1286,8 +1288,16 @@ def cmd_repro(args: argparse.Namespace) -> int:
                 json=False,
                 ignore=[],
             )
-            if cmd_build(ns) != EXIT_OK:
-                raise ReleaseError("REPRO_BUILD_FAILED", f"复现构建失败: {clone}")
+            # 子构建的人类可读输出不得混入 repro 的 JSON 结果。
+            sink = io.StringIO()
+            with contextlib.redirect_stdout(sink):
+                code = cmd_build(ns)
+            if code != EXIT_OK:
+                raise ReleaseError(
+                    "REPRO_BUILD_FAILED",
+                    f"复现构建失败: {clone}",
+                    details={"stdout": sink.getvalue()},
+                )
             snapshots.append(
                 {
                     p.name: sha256_file(p)

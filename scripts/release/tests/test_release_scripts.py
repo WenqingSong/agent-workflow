@@ -336,6 +336,14 @@ class ReleaseAssetTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn(".agent/workflow.yaml", proc.stdout)
 
+    def test_repro_json_is_clean_and_reproducible(self) -> None:
+        proc = tool("repro", "--repo", str(self.repo), "--tag", TAG, "--json")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        payload = json.loads(proc.stdout)  # --json 必须是纯净 JSON，不能被子构建输出污染
+        self.assertEqual(payload["status"], "PASS")
+        self.assertEqual(payload["artifacts"], 7)
+        self.assertEqual(payload["failures"], [])
+
     def test_verify_uploaded_detects_missing_and_tampered(self) -> None:
         downloads = Path(tempfile.mkdtemp(prefix="p08a-dl-"))
         try:
