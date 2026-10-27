@@ -13,3 +13,232 @@ $:
             go version
             git --version
             GOWORK=off go -C .agent/engine test ./...
+
+# ---------------------------------------------------------------------------
+# Workflow V3.1.0 发布流水线（tag_push）
+#
+# 安全模型（失败绝不产生错误的 GA / latest）：
+#   1. 只有 v3.1.0 这个精确 Tag 能触发；不使用 $ 兜底、不使用 v* 通配。
+#   2. Tag 必须是 Annotated Tag，且 .agent/VERSION 与 Tag 一致，Commit 必须可解析。
+#   3. 先建 preRelease=true / latest=false，再上传附件。
+#   4. 上传后从平台侧重新下载并逐项核对数量、名称、大小、SHA256。
+#   5. 核对通过才 promote；promote 使用 overlying=true（更新语义，禁止删除重建）。
+#   6. promote 后再次重新上传 + 重新下载核对；未通过不得标记 latest。
+#   7. 任一步失败即非零退出，后续阶段不执行；平台侧最多停留在 pre-release。
+#
+# 平台行为不确定项（需在真实独立 RC 仓库验证，本地不得声称已验证）：
+#   - git:release 的 overlying=true 是否保留已有附件；
+#   - attachments 下载是否接受 glob 与 ./dir/name 形式（插件自动取 basename）。
+# 因此 promote 后重新上传（幂等）并重新下载核对，不依赖“退出码为 0”推断附件存在。
+# ---------------------------------------------------------------------------
+v3.1.0:
+  tag_push:
+    - name: release-v3.1.0
+      runner:
+        cpus: 8
+      docker:
+        image: golang:1.24
+      env:
+        RELEASE_TAG: v3.1.0
+      stages:
+        - name: toolchain-preflight
+          script: |
+            set -euo pipefail
+            go version
+            git --version
+            if ! command -v python3 >/dev/null 2>&1; then
+              apt-get update
+              apt-get install -y --no-install-recommends python3
+            fi
+            python3 --version
+            command -v sha256sum
+
+        - name: tag-guard
+          script: |
+            set -euo pipefail
+            test "${CNB_BRANCH:-}" = "${RELEASE_TAG}" || {
+              echo "BLOCKED: 触发 Tag '${CNB_BRANCH:-<empty>}' 不是授权版本 '${RELEASE_TAG}'"
+              exit 1
+            }
+            python3 scripts/release/release.py guard \
+              --repo . \
+              --tag "${RELEASE_TAG}" \
+              --report dist/reports/guard.json \
+              --json
+
+        - name: engine-verification
+          script: |
+            set -euo pipefail
+            export GOWORK=off
+            go -C .agent/engine test -count=1 ./...
+            go -C .agent/engine vet ./...
+            go -C .agent/engine build ./...
+
+        - name: adoption-e2e
+          script: |
+            set -euo pipefail
+            python3 .agent/adoption/tests/test_workflow_adoption.py -v
+
+        - name: build-assets
+          script: |
+            set -euo pipefail
+            python3 scripts/release/release.py build \
+              --repo . \
+              --output dist \
+              --tag "${RELEASE_TAG}" \
+              --json
+
+        - name: verify-assets-local
+          script: |
+            set -euo pipefail
+            python3 scripts/release/release.py verify-assets \
+              --dir dist \
+              --version "${RELEASE_TAG#v}" \
+              --report dist/reports/local-verification.json \
+              --json
+
+        - name: snapshot-expected-assets
+          script: |
+            set -euo pipefail
+            mkdir -p dist/expected
+            cp dist/version.json dist/expected/version.json
+            cp dist/SHA256SUMS dist/expected/SHA256SUMS
+            for name in $(python3 scripts/release/release.py list --dir dist --format download | tr ',' ' '); do
+              cp "dist/${name}" "dist/expected/${name}"
+            done
+
+        - name: create-pre-release
+          type: git:release
+          options:
+            title: Workflow V3.1.0
+            descriptionFromFile: dist/agent-workflow-release-notes-3.1.0.md
+            preRelease: true
+            latest: false
+            overlying: true
+
+        - name: upload-assets
+          image: cnbcool/attachments:latest
+          settings:
+            tag: $CNB_BRANCH
+            attachments:
+              - "./dist/workflow-check_3.1.0_linux_amd64"
+              - "./dist/workflow-check_3.1.0_linux_arm64"
+              - "./dist/workflow-check_3.1.0_darwin_arm64"
+              - "./dist/workflow-check_3.1.0_windows_amd64.exe"
+              - "./dist/agent-workflow-src-*.tar.gz"
+              - "./dist/agent-workflow-src-*.tar.gz.sha256"
+              - "./dist/agent-workflow-release-notes-3.1.0.md"
+
+        - name: download-uploaded
+          image: cnbcool/attachments:latest
+          settings:
+            type: DOWNLOAD
+            tag: $CNB_BRANCH
+            attachments: "workflow-check_3.1.0_linux_amd64,workflow-check_3.1.0_linux_arm64,workflow-check_3.1.0_darwin_arm64,workflow-check_3.1.0_windows_amd64.exe,agent-workflow-release-notes-3.1.0.md,./dist/agent-workflow-src-*.tar.gz,./dist/agent-workflow-src-*.tar.gz.sha256"
+
+        - name: verify-uploaded
+          script: |
+            set -euo pipefail
+            python3 scripts/release/release.py verify-uploaded \
+              --assets dist/expected \
+              --downloads . \
+              --report dist/reports/upload-verification.json \
+              --json
+
+        - name: promote-gate-pre
+          script: |
+            set -euo pipefail
+            python3 scripts/release/release.py promote-gate \
+              --stage pre-promote \
+              --report dist/reports/upload-verification.json \
+              --assets dist/expected \
+              --out dist/reports/promote-gate-pre.json
+
+        - name: promote-ga
+          type: git:release
+          options:
+            title: Workflow V3.1.0
+            descriptionFromFile: dist/agent-workflow-release-notes-3.1.0.md
+            preRelease: false
+            latest: false
+            overlying: true
+
+        - name: reupload-after-promote
+          image: cnbcool/attachments:latest
+          settings:
+            tag: $CNB_BRANCH
+            attachments:
+              - "./dist/workflow-check_3.1.0_linux_amd64"
+              - "./dist/workflow-check_3.1.0_linux_arm64"
+              - "./dist/workflow-check_3.1.0_darwin_arm64"
+              - "./dist/workflow-check_3.1.0_windows_amd64.exe"
+              - "./dist/agent-workflow-src-*.tar.gz"
+              - "./dist/agent-workflow-src-*.tar.gz.sha256"
+              - "./dist/agent-workflow-release-notes-3.1.0.md"
+
+        - name: redownload-after-promote
+          image: cnbcool/attachments:latest
+          settings:
+            type: DOWNLOAD
+            tag: $CNB_BRANCH
+            attachments: "workflow-check_3.1.0_linux_amd64,workflow-check_3.1.0_linux_arm64,workflow-check_3.1.0_darwin_arm64,workflow-check_3.1.0_windows_amd64.exe,agent-workflow-release-notes-3.1.0.md,./dist/agent-workflow-src-*.tar.gz,./dist/agent-workflow-src-*.tar.gz.sha256"
+
+        - name: verify-after-promote
+          script: |
+            set -euo pipefail
+            python3 scripts/release/release.py verify-uploaded \
+              --assets dist/expected \
+              --downloads . \
+              --report dist/reports/post-promote-verification.json \
+              --json
+
+        - name: promote-gate-post
+          script: |
+            set -euo pipefail
+            python3 scripts/release/release.py promote-gate \
+              --stage post-promote \
+              --report dist/reports/post-promote-verification.json \
+              --assets dist/expected \
+              --out dist/reports/promote-gate-post.json
+
+        - name: mark-latest
+          type: git:release
+          options:
+            title: Workflow V3.1.0
+            descriptionFromFile: dist/agent-workflow-release-notes-3.1.0.md
+            preRelease: false
+            latest: true
+            overlying: true
+
+        - name: redownload-after-latest
+          image: cnbcool/attachments:latest
+          settings:
+            type: DOWNLOAD
+            tag: $CNB_BRANCH
+            attachments: "workflow-check_3.1.0_linux_amd64,workflow-check_3.1.0_linux_arm64,workflow-check_3.1.0_darwin_arm64,workflow-check_3.1.0_windows_amd64.exe,agent-workflow-release-notes-3.1.0.md,./dist/agent-workflow-src-*.tar.gz,./dist/agent-workflow-src-*.tar.gz.sha256"
+
+        - name: verify-after-latest
+          script: |
+            set -euo pipefail
+            python3 scripts/release/release.py verify-uploaded \
+              --assets dist/expected \
+              --downloads . \
+              --report dist/reports/final-verification.json \
+              --json
+
+        - name: promote-gate-latest
+          script: |
+            set -euo pipefail
+            python3 scripts/release/release.py promote-gate \
+              --stage latest \
+              --report dist/reports/final-verification.json \
+              --assets dist/expected \
+              --out dist/reports/promote-gate-latest.json
+
+        - name: release-verification-report
+          script: |
+            set -euo pipefail
+            python3 scripts/release/release.py report \
+              --dir dist \
+              --reports dist/reports \
+              --require-all

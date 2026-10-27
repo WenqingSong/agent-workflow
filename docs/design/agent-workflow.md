@@ -1,6 +1,6 @@
 # Agent Workflow V3 — 核心架构设计
 
-> **Workflow V3 Baseline**（`.agent/VERSION` = `3.0.0`）
+> **Workflow V3 Baseline**（`.agent/VERSION` = `3.1.0`）
 >
 > 当前 Workflow 协作 / 工程架构 major version 为 **V3**。Baseline 包含：independent-session role workflow（`NORMAL` / `COMPLEX` 六角色，`ARCHITECT` 增加 Architect 且不经过 Cleaner，见 §32）、Evidence Snapshot、machine gates、Generic Shared Resources、strict YAML、independent Workflow Engine module、Adoption mechanism。
 >

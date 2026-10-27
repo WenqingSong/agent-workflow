@@ -77,6 +77,9 @@ PACKAGE_ONLY_FILES = {
 }
 PACKAGE_ONLY_PREFIXES = (
     ".agent/adoption/tests/",
+    # P08 发布工程材料：随包分发用于版本追溯与可复现构建，但不安装到宿主。
+    "scripts/release/",
+    "docs/releases/",
 )
 
 # Framework-owned content installed into the host and eligible for upgrade.
@@ -1412,8 +1415,27 @@ def prepare_binary(
     env = os.environ.copy()
     env["GOWORK"] = "off"
     env.setdefault("CGO_ENABLED", "0")
+    # 从分发包内 Engine 构建时注入分发包自身的版本与 Commit：
+    # 否则宿主的 `.agent/bin/workflow-check version` 只能输出 dev/unknown，
+    # 已安装的 binary 无法自证来自哪个上游版本。
+    # buildSource=source 表示“由源码构建”，与发布资产 buildSource=release 区分。
+    ldflags = (
+        f"-X main.version={dist.framework_version} "
+        f"-X main.commit={dist.commit} "
+        "-X main.buildSource=source"
+    )
     proc = subprocess.run(
-        ["go", "build", "-trimpath", "-o", str(out), "./cmd/workflow-check"],
+        [
+            "go",
+            "build",
+            "-trimpath",
+            "-buildvcs=false",
+            "-ldflags",
+            ldflags,
+            "-o",
+            str(out),
+            "./cmd/workflow-check",
+        ],
         cwd=str(engine),
         capture_output=True,
         text=True,

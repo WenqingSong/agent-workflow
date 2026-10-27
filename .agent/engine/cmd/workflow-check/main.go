@@ -6,6 +6,7 @@
 // 用法：
 //
 //	workflow-check gate <coder-start|cleaner-start|owner-gate-start|delivery-start|merge-ready> <task> [--root DIR]
+//	workflow-check version [--json]
 //
 // exit code：
 //   - 0：PASS；
@@ -53,6 +54,12 @@ func run(args []string) int {
 		default:
 			positional = append(positional, a)
 		}
+	}
+
+	// version 是自描述命令：不依赖 --root、不读取 .agent/workflow.yaml，
+	// 也不参与任何 Gate 判定，因此必须在解析仓库根之前处理。
+	if len(positional) >= 1 && positional[0] == "version" {
+		return runVersion(positional[1:], os.Stdout, os.Stderr)
 	}
 
 	if len(positional) < 1 || positional[0] != "gate" {

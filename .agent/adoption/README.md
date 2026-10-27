@@ -78,7 +78,12 @@
 
 ## External workflow-check
 
-默认从分发包内同一 Commit 的 Engine 构建。若使用 P08 发布的 binary：
+默认从分发包内同一 Commit 的 Engine 构建。构建时注入分发包自身的
+`main.version` / `main.commit` 与 `buildSource=source`，因此安装后的
+`.agent/bin/workflow-check version` 会报告真实来源版本与 Commit，
+不会停留在 `dev` / `unknown`。发布资产使用 `buildSource=release` 区分。
+
+若使用 P08 发布的 binary：
 
 ```bash
 --workflow-check /path/to/workflow-check \
@@ -87,6 +92,11 @@
 ```
 
 缺任一固定值、Commit 不匹配或真实 Gate 不通过时，工具拒绝替换宿主现有 binary。
+
+升级不会无条件替换现有 binary：未提供通过校验的新 binary 时保留原 binary。因此
+`workflow-check version` 报告的是**该 binary 的构建 Commit**，而“当前安装的是哪个
+分发包”以 `.agent/upstream.yaml` 的 `source.commit` 为准；两者在只更新源码文件的
+升级中可能不同，这是预期语义，不是漂移。
 
 ## Safety Model
 
@@ -157,5 +167,6 @@ python3 .agent/adoption/tests/test_workflow_adoption.py -v
 
 ## Version Boundary
 
-当前 `.agent/VERSION` 是 `3.0.0`。`v3.1.0` Tag、Release、正式 binary 资产与
-版本标记由 P08 负责；本目录不创建 Tag / Release，也不伪造正式发布地址。
+当前 `.agent/VERSION` 是 `3.1.0`（Source Version）。`v3.1.0` Tag、Release、四平台
+binary 资产、`SHA256SUMS` 与 `version.json` 由发布流水线产生，当前 Published Status
+为 `NOT_RELEASED`；本目录不创建 Tag / Release，也不伪造正式发布地址。

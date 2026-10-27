@@ -311,7 +311,13 @@ class DistributionContractTests(unittest.TestCase):
         self.assertEqual(inspected["commit"], self.commit)
 
     def test_manifest_does_not_claim_an_unpublished_release(self) -> None:
-        self.assertEqual((REPO / ".agent/VERSION").read_text(encoding="utf-8").strip(), "3.0.0")
+        # 版本必须来自 .agent/VERSION 且与分发包一致；具体版本号由发布任务推进，
+        # 这里只校验“不得声称已发布”的契约，不绑定某个字面版本。
+        version = (REPO / ".agent/VERSION").read_text(encoding="utf-8").strip()
+        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
+        self.assertEqual(self.dist["framework_version"], version)
+        self.assertEqual(self.dist["manifest"]["release"]["tag"], "")
+        self.assertEqual(self.dist["manifest"]["release"]["url"], "")
         for relative in (
             "README.md",
             "PACKAGE_MANIFEST.md",
@@ -541,6 +547,19 @@ class InstallE2ETests(unittest.TestCase):
         self.assertTrue((host / ".agent/workflow.yaml").is_file())
         self.assertTrue((host / ".agent/upstream.yaml").is_file())
         self.assertTrue((host / ".agent/bin/workflow-check").is_file())
+
+        # 从分发包构建的 binary 必须自证来源：版本与 Commit 来自分发包，
+        # build_source=source 表示“由源码构建”，与发布资产 build_source=release 区分。
+        version_proc = subprocess.run(
+            [str(host / ".agent/bin/workflow-check"), "version", "--json"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(version_proc.returncode, 0, version_proc.stdout + version_proc.stderr)
+        info = json.loads(version_proc.stdout)
+        self.assertEqual(info["framework_version"], manifest["framework_version"])
+        self.assertEqual(info["source_commit"], self.commit)
+        self.assertEqual(info["build_source"], "source")
 
     def dist_for_source(self) -> dict:
         # A separate output dir avoids depending on a previous test's dist.
