@@ -17,12 +17,20 @@ var reviewNeutralBasenames = map[string]struct{}{
 	"owner-decision.md": {},
 	"delivery.md":       {},
 	"state.yaml":        {},
+	// DANGER 循环证据文件（V3.1.0）：CLEAN 之后记录 Owner 决策循环，
+	// 不得因为循环账本更新而破坏 CLEAN 有效性。
+	"loop-ledger.md":   {},
+	"danger-report.md": {},
 }
 
 // deliveryNeutralBasenames 是 delivery tail 允许的文件名（更窄）。
 var deliveryNeutralBasenames = map[string]struct{}{
 	"delivery.md": {},
 	"state.yaml":  {},
+	// 同上：Delivery Evidence 建立后触发 DANGER，Owner 授权恢复动作
+	// 不得因为写入这两个证据文件而永久无法达到 merge-ready。
+	"loop-ledger.md":   {},
+	"danger-report.md": {},
 }
 
 // taskScoped 报告路径 p 是否精确位于 .agent/tasks/<task>/ 下（不含更深的子目录）。
