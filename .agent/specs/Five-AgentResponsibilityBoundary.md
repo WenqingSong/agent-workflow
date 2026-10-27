@@ -29,7 +29,7 @@ Owner 回答：我要什么、哪些重要方案可以接受、哪些核心逻�
 Owner 负责：
 
 - 决定 Goal、Scope、Out of Scope 和 Acceptance Criteria；
-- 决定 Task / Branch Boundary：新任务还是延续、是否开新 feature、branch 名称与基线；
+- 决定 Task / Branch Boundary：新任务还是延续、是否开新 feature、branch 名称与基线；需要时把「创建当前任务初始分支」这一窄操作按 `TB-BRANCH-1` 明确授权给 TaskBuilder；
 - 确认复杂任务的关键方案（Contract Decision）；
 - 阅读核心逻辑说明，做 Core Logic Decision（ACCEPT / REJECT / 继续询问）；
 - 决定 Shared Integration：何时/如何 merge、merge 顺序、squash 方式、并行依赖；
@@ -48,11 +48,12 @@ TaskBuilder 回答：本次究竟交付什么，怎样判断完成？
 - 区分事实、合理假设和需要 Owner 决定的问题；
 - 判断 Design Impact（`NONE` / `UPDATE` / `NEW`）；当为 `NEW/UPDATE` 时在 `task.md` 声明目标 Design Artifact，并纳入 Scope、Deliverables 与 AC；
 - 判断任务直接交 Coder，还是先交 Analyst（Complexity）；
-- 声明全局资源需求（类型 + 语义），不写具体域号 / version 号。
+- 声明全局资源需求（类型 + 语义），不写具体域号 / version 号；
+- 在 Owner 明确授权下执行 `TB-BRANCH-1`：创建当前任务的初始 Feature Branch、初始化任务 Artifact、Commit、普通 Push，并核验远端 SHA 与工作区状态。
 
 不负责：写生产代码、替 Analyst 完成复杂设计、Review 实现，或替 Owner 创造关键业务规则。
 
-TaskBuilder 禁止创建、删除、重命名 feature branch；目标 branch 由 Owner 预先准备。
+TaskBuilder 默认不拥有分支生命周期，目标 branch 由 Owner 预先准备。唯一例外是 `TB-BRANCH-1`：Owner 逐项给出完整分支名、起始分支、起始 Commit SHA、Task Slug 并明确授权后，TaskBuilder 可为**当前任务**创建初始 Feature Branch 并完成首次 Commit / Push。TaskBuilder 仍禁止删除或重命名分支、Merge、Rebase、Force Push、Push `main` 或共享集成分支；该例外不改变 Engine、Gate 与 `state.yaml` schema。
 
 ## 4. Analyst
 
@@ -162,6 +163,8 @@ Cleaner   → gate owner-gate-start → HANDOFF OwnerGate
 OwnerGate → gate delivery-start   → HANDOFF Deliverer
 Deliverer → gate merge-ready      → HANDOFF Owner
 ```
+
+TaskBuilder 不在上表内：它的通用出口是 Commit + Push + 远端同步核验，不是 Gate。仅 `NORMAL` 路线以 `coder-start` 作为 Coder 入口 Gate（`contract.status = NOT_REQUIRED`、无共享 Registry 预留）；`COMPLEX` / `ARCHITECT` 在 `contract.status = PENDING` 时直接交 Analyst，不运行 `coder-start`。Analyst 批准 Contract 后，由后续角色按各自入口 Gate 继续。
 
 实现问题退回 Coder，设计问题交 Analyst 和 Owner，任务目标变化交 Owner 或 TaskBuilder。角色完成自己的阶段后停止，不顺手接管下一角色。
 

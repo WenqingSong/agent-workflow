@@ -74,7 +74,7 @@ Coder 负责生产代码和测试，不为展示过程而重复维护上述文�
 标准路由：
 
 ```text
-Owner 准备 feature branch
+Owner 决定分支名与起始基线（可授权 TaskBuilder 创建任务初始分支）
 → TaskBuilder
 → Analyst（Contract Decision / 如需资源 Reservation）
 → Coder
@@ -84,7 +84,9 @@ Owner 准备 feature branch
 → Owner（决定何时/如何集成）
 ```
 
-简单任务（无需独立 Contract/Design，`contract.status = NOT_REQUIRED`）可 `TaskBuilder → Coder`。TaskBuilder 不能为省流程擅自跳过 Analyst。
+Feature Branch 的成立方式有两种：Owner 预先创建；或 Owner 给出完整分支名、起始分支、起始 Commit SHA、Task Slug 并明确授权后，由 TaskBuilder 按 `TB-BRANCH-1` 创建**当前任务**的初始分支。授权范围与边界见 §11.1。
+
+简单任务（无需独立 Contract/Design，`contract.status = NOT_REQUIRED`）可 `TaskBuilder → Coder`。TaskBuilder 不能为省流程擅自跳过 Analyst。`ARCHITECT` 路线的角色与 Gate 语义另行定义，其 TaskBuilder 出口与 `COMPLEX` 相同：`contract.status = PENDING`，先交 Analyst。
 
 Owner Checkpoint（`WAITING_FOR_OWNER_DECISION`）不是 Handoff：不结束当前 Session、没有 NEXT_ROLE，Owner 回复后原 Agent 继续。
 
@@ -102,6 +104,8 @@ Owner Checkpoint（`WAITING_FOR_OWNER_DECISION`）不是 Handoff：不结束当�
 
 `handoffReady`（非 detached、clean、remote 存在、local==remote）是每个出口 Gate 的共同前提。
 
+TaskBuilder 不在上表内：它的通用出口是 **Commit + Push + 远端同步核验**，不是 Gate。只有 `NORMAL` 路线以 `coder-start` 作为 Coder 入口 Gate；`COMPLEX` / `ARCHITECT` 在 `contract.status = PENDING` 时直接交 Analyst，不运行 `coder-start`（该 Gate 要求 Contract 为 `APPROVED` 或 `NOT_REQUIRED`）。
+
 正常 HANDOFF 的统一前提是：
 
 - 当前角色职责已经全部完成；
@@ -117,7 +121,7 @@ Owner Checkpoint（`WAITING_FOR_OWNER_DECISION`）不是 Handoff：不结束当�
 
 ## 7. 证据、基线与 Scope
 
-- TaskBuilder 记录任务开始时的 Git 基线和已有修改。
+- TaskBuilder 记录任务开始时的 Git 基线和已有修改；经 `TB-BRANCH-1` 创建分支时，基线取 Owner 授权的起始分支与完整 SHA，不用实际 HEAD 反向覆盖授权值。
 - Coder 保留已有工作，只修改当前 Scope 所需内容。
 - Cleaner 审查 `review.target` 之后的全部相关变更；不能只看默认 `git diff`。
 - `CLEAN` 只对 `review.target`（immutable commit）有效。生产代码、测试或约束发生实质变化后必须复审。
@@ -164,15 +168,27 @@ Cleaner 审查测试可信度，在 `core-logic.md` 整理核心验证卡；Owne
 
 ## 11. Git 权限与最终决定
 
-本节只适用于已激活的 Workflow Role Session（范围见 §1.1），不构成对宿主其他 Agent 或仓库级 Git 操作的通用规则；也不改变 Workflow Role 现有权限。
+本节只适用于已激活的 Workflow Role Session（范围见 §1.1），不构成对宿主其他 Agent 或仓库级 Git 操作的通用规则；除 §11.1 的 TaskBuilder 窄例外外，不改变 Workflow Role 现有权限。
 
 - Agent 允许：`fetch / status / diff / log / show / rev-parse`、`switch` 到已存在且属于当前任务的分支、`pull --ff-only` 当前 feature。
-- Agent 禁止：创建/删除/重命名 branch、merge feature→develop、`push --force`、`reset --hard`、`clean -fd`、`git add -A` / `git add .`、rebase 已发布历史、`commit --amend`、rewrite history。`push develop` 默认禁止——唯一例外是 Analyst 的 Registry-only develop commit（仅 `.agent/workflow.yaml` 已声明的 Registry 文件，见 §12.2）。
+- Agent 禁止：删除/重命名 branch、merge feature→develop、`push --force`、`reset --hard`、`clean -fd`、`git add -A` / `git add .`、rebase 已发布历史、`commit --amend`、rewrite history。`push develop` 默认禁止——唯一例外是 Analyst 的 Registry-only develop commit（仅 `.agent/workflow.yaml` 已声明的 Registry 文件，见 §12.2）。
+- 创建 branch 默认禁止；唯一例外是 TaskBuilder 经 Owner 授权的当前任务初始分支创建（`TB-BRANCH-1`，见 §11.1）。
 - 这些 git 写约束是协议/Prompt 硬约束；shared develop 的机器级保护交给仓库 branch protection / 外部 Git 控制能力。`.agent/bin/workflow-check` 只读，不拦截 git 写命令。
 - 标准 commit 前流程：`git status --short` → `git diff` → `git add <明确属于本角色的文件>` → `git diff --cached` → `git commit`。发现其他角色遗留修改 → STOP，不得顺便提交。
 - Agent-generated commit message 默认使用中文摘要，保持 Conventional Commit 结构：`<type>(<scope>): <中文摘要>`。`type` / `scope` 保留英文关键字（常用 `feat` / `fix` / `refactor` / `test` / `docs` / `chore`），中文只用于 summary。不要求 summary 必须英文，不因中文 commit message 阻塞流程。
 
 Owner 决定关键业务规则、Contract、是否接受核心逻辑、是否启动 Deliverer，以及最终接受、Commit、Merge、Push 和 Deploy。
+
+### 11.1 TaskBuilder 任务初始分支创建例外（TB-BRANCH-1）
+
+权威的操作序列、预检清单与结果码在 `.agent/roles/TaskBuilderPrompt.md` 的 `TB-BRANCH-1` 章节维护；本节只固定授权边界：
+
+- Owner 继续拥有分支命名权、起始基线决定权与共享集成控制权；
+- TaskBuilder 只在 Owner 逐项给出「完整分支名 + 起始分支 + 起始 Commit SHA + 明确的创建授权 + Task Slug」时，才可为**当前任务**创建初始 Feature Branch，并完成初始 Artifact 的 Commit 与普通 Push；
+- 该例外不延伸到：删除或重命名分支、Merge、Rebase、Force Push、Push `main` 或共享集成分支、修改其他角色 Artifact、Push 共享 Registry；
+- 除该例外，其他 Workflow Role 的 Git 白名单与禁止事项完全不变；Workflow Role 也不因该例外获得 Merge、Push main、Force、Reset 权力；
+- `TB-BRANCH-1` 的结果码（`OWNER_INPUT_REQUIRED`、`BRANCH_ALREADY_EXISTS`、`DIRTY_WORKTREE`、`STAGED_CONTENT_CONFLICT`、`BASE_MISMATCH`、`TASK_ALREADY_EXISTS`、`REMOTE_NOT_SYNCED`、`BOOTSTRAP_COMPLETE`）是 Prompt 层输出标识，不进入 `state.yaml` schema，也不改变 Engine Gate；
+- 该例外不改变 §1.1：普通 Agent Session 的 Git 权限仍由 Owner 指令与宿主安全规则决定，不被 Workflow Role 白名单自动约束。
 
 ## 12. 跨任务全局资源预留
 
