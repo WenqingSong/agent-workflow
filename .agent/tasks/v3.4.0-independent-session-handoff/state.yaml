@@ -13,10 +13,10 @@ owner:
   status: ACCEPTED
   review_target: "1b6fef5478ec4434859d95f342a5884e23ad342e"
 delivery:
-  status: NOT_RUN
-  review_target: ""
-  feature_head: ""
-  develop_base: ""
+  status: PASS
+  review_target: "1b6fef5478ec4434859d95f342a5884e23ad342e"
+  feature_head: "4f6730604ce488d537d0f4e0ed5b6f5e7af04352"
+  develop_base: "6c805dab8a5656bccbc7d34abac48222d7abe203"
 blocked:
   active: false
   by: ""
