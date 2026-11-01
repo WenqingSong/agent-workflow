@@ -946,6 +946,9 @@ def _load_source_tree(
             continue
         kind = classify_path(path)
         if kind == "never_package":
+            if path.startswith(EXCLUDABLE_TASK_PREFIX):
+                # 与 dist 一致：框架仓库自托管的 Task 数据不安装、也不使来源无效。
+                continue
             violations.append(f"{path} (host/protected data)")
             continue
         if kind == "unclassified":
