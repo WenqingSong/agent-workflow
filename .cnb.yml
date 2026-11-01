@@ -1,18 +1,23 @@
+# 云原生开发环境配置。CNB 的分支匹配是「glob 命中后不再回退 $」，
+# 一旦下方声明了 main: 分支键，main 分支就只读 main 下的配置，
+# 因此这里用 YAML 锚点让 $ 与 main 共用同一份定义。
+.dev-config: &dev-config
+  - name: workflow-dev
+    runner:
+      cpus: 8
+    services:
+      - vscode
+    docker:
+      image: docker.cnb.cool/arthur-cloud-native/jetbrains/goland:5.0.1
+    stages:
+      - name: verify-engine
+        script: |
+          go version
+          git --version
+          GOWORK=off go -C .agent/engine test ./...
+
 $:
-  vscode:
-    - name: workflow-dev
-      runner:
-        cpus: 8
-      services:
-        - vscode
-      docker:
-        image: docker.cnb.cool/arthur-cloud-native/jetbrains/goland:5.0.1
-      stages:
-        - name: verify-engine
-          script: |
-            go version
-            git --version
-            GOWORK=off go -C .agent/engine test ./...
+  vscode: *dev-config
 
 # ---------------------------------------------------------------------------
 # Workflow V3.4.0 发布流水线（tag_push）
@@ -347,3 +352,76 @@ v3.4.0:
               --dir dist \
               --reports dist/reports \
               --require-all
+
+# ---------------------------------------------------------------------------
+# main 分支 push：单向镜像到 GitHub（https://github.com/WenqingSong/agent-workflow）
+#
+# 凭据来自私有密钥仓库：
+#   https://cnb.cool/framework-station/agent-workflow-password/-/blob/main/github-mirror.yml
+# 该文件自身声明 allow_slugs="framework-station/agent-workflow"、
+# allow_events="push"、allow_branches="main"，因此只有本仓库 main 分支的 push
+# 事件能引用它；GITHUB_USERNAME / GITHUB_TOKEN 只在流水线内以环境变量存在，
+# 不写入仓库、不写入 remote URL、不打印到日志。
+#
+# 同步语义：CNB 是唯一写入方，GitHub 是只读影子。推送后回读 GitHub 侧
+# refs/heads/main，与本地 HEAD 逐字比对，不一致即失败。
+# ---------------------------------------------------------------------------
+main:
+  vscode: *dev-config
+  push:
+    - name: mirror-to-github
+      imports: https://cnb.cool/framework-station/agent-workflow-password/-/blob/main/github-mirror.yml
+      docker:
+        image: golang:1.24
+      env:
+        MIRROR_TARGET: WenqingSong/agent-workflow
+        MIRROR_BRANCH: main
+      stages:
+        - name: mirror-preflight
+          script: |
+            set -euo pipefail
+            : "${GITHUB_USERNAME:?GITHUB_USERNAME 未注入：检查 github-mirror.yml 的 allow_slugs / allow_events / allow_branches}"
+            : "${GITHUB_TOKEN:?GITHUB_TOKEN 未注入：检查密钥仓库 github-mirror.yml}"
+            if [ "${CNB_BRANCH:-}" != "${MIRROR_BRANCH}" ]; then
+              echo "BLOCKED: 只镜像 ${MIRROR_BRANCH} 分支，当前触发分支 '${CNB_BRANCH:-<empty>}'"
+              exit 1
+            fi
+            git config --global --add safe.directory "$PWD"
+            git --version
+            echo "本地 HEAD: $(git rev-parse HEAD)"
+            echo "目标: https://github.com/${MIRROR_TARGET} refs/heads/${MIRROR_BRANCH}"
+            if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+              echo "检测到浅克隆，补全历史（首次镜像到空仓库时需要完整历史）"
+              git fetch --unshallow --tags origin \
+                || echo "WARNING: 补全历史失败，继续尝试推送（GitHub 侧已有相同历史时仍可成功）"
+            fi
+
+        - name: mirror-push
+          script: |
+            set -euo pipefail
+            # 认证放在 http.extraheader：令牌不落到 remote URL，也不会被 git 报错信息带出
+            AUTH="AUTHORIZATION: basic $(printf '%s:%s' "${GITHUB_USERNAME}" "${GITHUB_TOKEN}" | base64 | tr -d '\n')"
+            REMOTE_URL="https://github.com/${MIRROR_TARGET}.git"
+            export GIT_TERMINAL_PROMPT=0
+            git config --global --add safe.directory "$PWD"
+            git remote remove github >/dev/null 2>&1 || true
+            git remote add github "${REMOTE_URL}"
+            # GitHub 为只读影子：分支按镜像语义强制对齐，Tag 一并同步
+            git -c http.extraheader="${AUTH}" push --force github "HEAD:refs/heads/${MIRROR_BRANCH}"
+            git -c http.extraheader="${AUTH}" push --force --tags github
+
+        - name: mirror-verify
+          script: |
+            set -euo pipefail
+            AUTH="AUTHORIZATION: basic $(printf '%s:%s' "${GITHUB_USERNAME}" "${GITHUB_TOKEN}" | base64 | tr -d '\n')"
+            REMOTE_URL="https://github.com/${MIRROR_TARGET}.git"
+            export GIT_TERMINAL_PROMPT=0
+            LOCAL_SHA="$(git rev-parse HEAD)"
+            REMOTE_SHA="$(git -c http.extraheader="${AUTH}" ls-remote "${REMOTE_URL}" "refs/heads/${MIRROR_BRANCH}" | awk '{print $1}')"
+            echo "本地 HEAD          : ${LOCAL_SHA}"
+            echo "GitHub ${MIRROR_BRANCH}         : ${REMOTE_SHA:-<empty>}"
+            if [ "${REMOTE_SHA}" != "${LOCAL_SHA}" ]; then
+              echo "FAILED: GitHub 侧 ${MIRROR_BRANCH} 与本次推送的 Commit 不一致"
+              exit 1
+            fi
+            echo "OK: GitHub 镜像已对齐 ${LOCAL_SHA}"
