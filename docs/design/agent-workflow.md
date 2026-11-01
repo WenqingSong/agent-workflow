@@ -186,7 +186,7 @@ V1 使用 13 值 `phase` 状态机 + `STALE` 持久状态 + Transition Authority
 
 V2 改为：**不保存 `phase`、`STALE`、`DONE`**。生命周期由 Owner 与 Gate 控制；状态有效性由 immutable Evidence Snapshot + Neutral Tail 机械推导。
 
-`state.yaml` 只保存 Git 无法推导的**工作流决策事实**。明确不保存：`phase`、`STALE`、`DONE`、`branch`、`HEAD`、`working_tree`、`changed_files`、`NEXT_ROLE`、`NEXT_ACTION`。
+`state.yaml` 只保存 Git 无法推导的**工作流决策事实**。明确不保存：`phase`、`STALE`、`DONE`、`branch`、`HEAD`、`working_tree`、`changed_files`、`NEXT_ROLE`、`OWNER_ACTION`。
 
 ### 当前真实 `state.yaml` 数据模型
 
@@ -528,8 +528,8 @@ Cleaner 得出 CLEAN 后仍必须完成：
 6. remote synced；
 7. 下一角色入口 Gate PASS；
 8. NEXT_ROLE 明确；
-9. NEXT_ACTION 明确；
-10. NEXT_TARGET 明确。
+9. TASK_PATH 指向真实任务目录；
+10. OWNER_ACTION 明确（`NONE` / `CONTINUE` / `DECIDE:` / `DO:` / `STOP`）。
 
 只有这样才允许正式 HANDOFF。
 
