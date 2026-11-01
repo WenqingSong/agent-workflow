@@ -64,7 +64,7 @@ Git 的 Stage / Commit / Push / Gate / HANDOFF 时机与七角色例外矩阵以
 
 | 文件              | 用途                                     | 默认维护者          |
 | ----------------- | ---------------------------------------- | ------------------- |
-| `task.md`         | 目标、范围、AC、验证要求和任务基线       | TaskBuilder；Owner 可修改 |
+| `task.md`         | 目标、范围、AC、依赖关系、验证要求和任务基线 | TaskBuilder；Owner 可修改 |
 | `state.yaml`      | 当前决策的唯一机器权威源（Evidence Binding） | 各角色按职责机械持久化 |
 | `contract.md`     | 已确认的关键设计、不变量和错误语义       | Analyst             |
 | `architecture.md` | `ARCHITECT` 的结构事实与结构验证入口（模块边界、依赖方向、不变量、`NOT_EXECUTED`） | Architect（验证阶段只读） |
@@ -84,7 +84,8 @@ Coder 负责生产代码和测试，不为展示过程而重复维护上述文�
 标准路由：
 
 ```text
-Owner 决定分支名与起始基线（可授权 TaskBuilder 创建任务初始分支）
+Owner 提出任务目标 / 清单（可显式指定 Slug、分支与基线）
+→ TaskBuilder 自动发现基线、生成名称并创建当前任务初始分支
 → TaskBuilder
 → Analyst（Contract Decision / 如需资源 Reservation）
 → Coder
@@ -94,7 +95,7 @@ Owner 决定分支名与起始基线（可授权 TaskBuilder 创建任务初始�
 → Owner（决定何时/如何集成）
 ```
 
-Feature Branch 的成立方式有两种：Owner 预先创建；或 Owner 给出完整分支名、起始分支、起始 Commit SHA、Task Slug 并明确授权后，由 TaskBuilder 按 `TB-BRANCH-1` 创建**当前任务**的初始分支。授权范围与边界见 §11.1。
+Feature Branch 的成立方式有两种：Owner 预先创建并在其上开始；或 Owner 明确要求创建 / 初始化 / 执行任务后，由 TaskBuilder 按 `TB-BRANCH-1` 以**当前检出分支与当前 HEAD**为默认基线，自动生成 Task Slug 与 Feature Branch 名称，并创建**当前任务**的初始分支。Owner 显式给出的 Slug、分支或基线是上层约束；未给出时不要求补齐。授权范围与边界见 §11.1。
 
 简单任务（无需独立 Contract/Design，`contract.status = NOT_REQUIRED`）可 `TaskBuilder → Coder`。TaskBuilder 不能为省流程擅自跳过 Analyst。
 
@@ -126,18 +127,18 @@ Gate 是 Handoff 前的机械出站检查。角色 Handoff 前运行的 Gate 就
 
 | 路线 | 角色 | 入口 Gate | 本角色产出 Commit | Push | 出口 Gate | Handoff | 失败回退 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| NORMAL | TaskBuilder | 无（`TB-BRANCH-1` 预检） | 任务 Artifact 初始化（`contract.status=NOT_REQUIRED`） | 是 | `coder-start` | Coder | 修复本角色 Artifact 或 Git 收尾；超出 authority 则 `BLOCKED` |
+| NORMAL | TaskBuilder | 无（自动基线发现 + `TB-BRANCH-1` 预检） | 任务 Artifact 初始化（`contract.status=NOT_REQUIRED`） | 是 | `coder-start` | Coder | 修复本角色 Artifact 或 Git 收尾；超出 authority 则 `BLOCKED` |
 | NORMAL | Coder | `coder-start` | C1 实现快照 + C2 Review Metadata（`PENDING` / `target=C1`） | 是 | `cleaner-start` | Cleaner | 修实现与证据；Contract/Scope 问题 `BLOCKED` |
 | NORMAL | Cleaner | `cleaner-start` | CLEAN artifacts 或 CHANGES_REQUIRED artifacts | 是 | `owner-gate-start` / 无（退回） | OwnerGate / Coder | 补自身证据；实现缺陷 `CHANGES_REQUIRED` |
 | NORMAL | OwnerGate | `owner-gate-start` | `owner-decision.md` + `owner.*` | 是 | `delivery-start` / 无（REJECT） | Deliverer / Coder 或 Analyst | Owner 未决保持 `PENDING`；REJECT 持久化后退回 |
 | NORMAL | Deliverer | `delivery-start` | `delivery.md` + `delivery.*`（三 SHA 绑定） | 是 | `merge-ready` | Owner | `FAIL` / `BLOCKED` 持久化后退回 |
-| COMPLEX | TaskBuilder | 无（`TB-BRANCH-1` 预检） | 任务 Artifact 初始化（`contract.status=PENDING`） | 是 | 无（只读同步自检，不运行 `coder-start`） | Analyst | 修复 Artifact 或 Git 收尾 |
+| COMPLEX | TaskBuilder | 无（自动基线发现 + `TB-BRANCH-1` 预检） | 任务 Artifact 初始化（`contract.status=PENDING`） | 是 | 无（只读同步自检，不运行 `coder-start`） | Analyst | 修复 Artifact 或 Git 收尾 |
 | COMPLEX | Analyst | 无（TaskBuilder 直接交接） | A1 Contract Evidence + A2 Approval Metadata | 是 | `coder-start` | Coder | Owner 未批准保持 `PENDING`；REJECT / 实质修订重新形成 A1 |
 | COMPLEX | Coder | `coder-start` | C1 实现快照 + C2 Review Metadata | 是 | `cleaner-start` | Cleaner | 同 NORMAL |
 | COMPLEX | Cleaner | `cleaner-start` | CLEAN artifacts 或 CHANGES_REQUIRED artifacts | 是 | `owner-gate-start` / 无（退回） | OwnerGate / Coder | 四者一致性与 Contract 覆盖不足时 `CHANGES_REQUIRED` |
 | COMPLEX | OwnerGate | `owner-gate-start` | `owner-decision.md` + `owner.*` | 是 | `delivery-start` / 无（REJECT） | Deliverer / Coder 或 Analyst | 同 NORMAL |
 | COMPLEX | Deliverer | `delivery-start` | `delivery.md` + `delivery.*` | 是 | `merge-ready` | Owner | 同 NORMAL |
-| ARCHITECT | TaskBuilder | 无（`TB-BRANCH-1` 预检） | 任务 Artifact 初始化（`contract.status=PENDING`） | 是 | 无（只读同步自检，不运行 `coder-start`） | Analyst | 修复 Artifact 或 Git 收尾 |
+| ARCHITECT | TaskBuilder | 无（自动基线发现 + `TB-BRANCH-1` 预检） | 任务 Artifact 初始化（`contract.status=PENDING`） | 是 | 无（只读同步自检，不运行 `coder-start`） | Analyst | 修复 Artifact 或 Git 收尾 |
 | ARCHITECT | Analyst | 无（TaskBuilder 直接交接） | A1 Contract Evidence（限定结构交付）+ A2 Approval Metadata | 是 | `coder-start` | Architect | 同 COMPLEX |
 | ARCHITECT | Architect | `coder-start`（复用，开工前重新确认） | D1 结构快照 + D2 Review Metadata（`PENDING` / `target=D1`） | 是 | `cleaner-start` | OwnerGate（V1，新 Session） | 修结构骨架与证据；Contract/Scope 问题 `BLOCKED` |
 | ARCHITECT | OwnerGate V1 | `cleaner-start` | `findings.md`、`core-logic.md`、`review.status=CLEAN`（`target` 保持 D1） | 是 | `owner-gate-start` | OwnerGate V2（同 Session） | 结构缺陷 `CHANGES_REQUIRED` → Architect；Contract 问题 `BLOCKED` |
@@ -186,7 +187,7 @@ Push 失败、远端 SHA 不一致、工作区 dirty 或 Gate `FAIL` 时：不�
 
 ## 7. 证据、基线与 Scope
 
-- TaskBuilder 记录任务开始时的 Git 基线和已有修改；经 `TB-BRANCH-1` 创建分支时，基线取 Owner 授权的起始分支与完整 SHA，不用实际 HEAD 反向覆盖授权值。
+- TaskBuilder 记录任务开始时的 Git 基线和已有修改；经 `TB-BRANCH-1` 创建分支时，基线由当前检出的分支与当前 HEAD 自动发现（Owner 显式指定时以其为约束），不得擅自切换到 develop / main，也不得用远端最新 SHA 替换当前 HEAD。发现的分支、完整 SHA、upstream 与领先 / 落后 / 分叉状态必须写入 `task.md` 的 `Review Baseline`。
 - Coder 保留已有工作，只修改当前 Scope 所需内容。
 - Cleaner 审查 `review.target` 之后的全部相关变更；不能只看默认 `git diff`。
 - `CLEAN` 只对 `review.target`（immutable commit）有效。生产代码、测试或约束发生实质变化后必须复审。
@@ -204,6 +205,21 @@ Engine 为保护历史兼容仍接受合法形态的 7～40 位十六进制短 S
 历史任务中若存在可移动引用，属于升级迁移问题，由 Adoption / 升级说明处理；不得为兼容非法历史 Evidence 而放宽 Engine。
 
 需要突破 Scope 才能正确完成时，停止扩张并交 Owner 决定。不得覆盖来源不明的已有修改，也不得把别人的修改算作自己的成果。
+
+### 7.2 任务依赖模型（TB-DEP-1）
+
+TaskBuilder 在任务初始化时区分三类依赖，并写入 `task.md` 的 `## Dependencies`：
+
+| 类型 | 含义 | 上游未交付时 |
+| --- | --- | --- |
+| Blocking | 当前任务的 Goal / AC 必须使用上游已审查通过的结论或产物 | 不初始化、不 HANDOFF；`BLOCKED` + `UPSTREAM_NOT_DELIVERED` |
+| Reference-only | 上游只提供参考，当前任务可独立调查与定义 | 继续初始化；记录未交付，不引用未审查结论 |
+| Parallel | 无交付依赖，可并行执行 | 正常初始化 |
+
+- 依赖必须来自 Owner 的任务清单与真实交付证据，不按任务编号顺序假设；
+- 不得把 Blocking 依赖降级为 Reference-only 以求开工，也不得把 Reference-only 依赖伪装成已满足；
+- 依赖只记录在 `task.md`，不新增 `state.yaml` 字段，不引入依赖图引擎；
+- 每个任务仍独立走自己的路线与 Gate；Parallel 不等于免审批。
 
 ## 8. Finding
 
@@ -249,7 +265,7 @@ Owner 不需要逐行 Review 全部代码。交付应帮助 Owner 理解：
 
 - Agent 允许：`fetch / status / diff / log / show / rev-parse`、`switch` 到已存在且属于当前任务的分支、`pull --ff-only` 当前 feature、显式 stage 本角色 owned artifacts、`commit`、普通 `push` 当前 feature branch（共享集成分支与 `main` 除外）。Commit 与 Push 是正常 Handoff 的必要动作，不是需要额外授权的例外。
 - Agent 禁止：删除/重命名 branch、merge feature→develop、`push --force`、`reset --hard`、`clean -fd`、`git add -A` / `git add .`、rebase 已发布历史、`commit --amend`、rewrite history。`push develop` 默认禁止——唯一例外是 Analyst 的 Registry-only develop commit（仅 `.agent/workflow.yaml` 已声明的 Registry 文件，见 §12.2）。
-- 创建 branch 默认禁止；唯一例外是 TaskBuilder 经 Owner 授权的当前任务初始分支创建（`TB-BRANCH-1`，见 §11.1）。
+- 创建 branch 默认禁止；唯一例外是 TaskBuilder 对当前任务的初始分支创建（`TB-BRANCH-1`，见 §11.1）。Owner 明确要求创建 / 初始化 / 执行任务即构成该窄授权，不需要 Owner 重复给出分支名或额外授权表述。
 - 这些 git 写约束是协议/Prompt 硬约束；shared develop 的机器级保护交给仓库 branch protection / 外部 Git 控制能力。`.agent/bin/workflow-check` 只读，不拦截 git 写命令。
 - 本规范不增加 Git Hook、不修改仓库全局配置、不拦截开发者日常 Git 操作。`git commit` / `git push` 的时机约束是 **SPEC_ONLY**，不得描述为 Engine 强制；可复核的防线是 Gate 与真实 Git 证据，以及 `.agent/specs/WorkflowGitLifecycle.md` §12 的只读前置自检。
 - 标准 commit 前流程：`git status --short` → `git diff` → `git add <明确属于本角色的文件>` → `git diff --cached --name-status` → `git commit`。发现其他角色遗留修改 → STOP，不得顺便提交。Commit 类型必须属于 `.agent/specs/WorkflowGitLifecycle.md` §2 的合法类型。
@@ -259,13 +275,15 @@ Owner 决定关键业务规则、Contract、是否接受核心逻辑、是否启
 
 ### 11.1 TaskBuilder 任务初始分支创建例外（TB-BRANCH-1）
 
-权威的操作序列、预检清单与结果码在 `.agent/roles/TaskBuilderPrompt.md` 的 `TB-BRANCH-1` 章节维护；本节只固定授权边界：
+权威的基线发现、命名、预检序列与结果码在 `.agent/roles/TaskBuilderPrompt.md` 的 `TB-BRANCH-1` / `TB-BASE-1` / `TB-NAME-1` 章节维护；本节只固定授权边界：
 
-- Owner 继续拥有分支命名权、起始基线决定权与共享集成控制权；
-- TaskBuilder 只在 Owner 逐项给出「完整分支名 + 起始分支 + 起始 Commit SHA + 明确的创建授权 + Task Slug」时，才可为**当前任务**创建初始 Feature Branch，并完成初始 Artifact 的 Commit 与普通 Push；
-- 该例外不延伸到：删除或重命名分支、Merge、Rebase、Force Push、Push `main` 或共享集成分支、修改其他角色 Artifact、Push 共享 Registry；
+- Owner 继续拥有共享集成控制权；Owner 显式指定的分支名与基线是上层约束，TaskBuilder 必须遵守并验证；
+- Owner 未指定时，TaskBuilder 以**当前检出分支与当前 HEAD**为默认基线，自动生成 Task Slug 与 `task/<task-slug>` 分支名；不得擅自切换到 develop / main，不得用远端 SHA 替换当前 HEAD，也不得因缺少名称而要求 Owner 补充；
+- Owner 明确要求创建、初始化并执行任务，即构成本任务初始分支创建的窄授权；授权只覆盖：创建当前任务分支、写入任务初始 Artifact、Commit 当前任务目录、普通 Push 该分支、核验远端；
+- 该例外不延伸到：删除或重命名分支、Merge、Rebase、Force Push、Push `main` / `master` / 共享集成分支、修改其他任务或角色的 Artifact、Push 共享 Registry；
 - 除该例外，其他 Workflow Role 的 Git 白名单与禁止事项完全不变；Workflow Role 也不因该例外获得 Merge、Push main、Force、Reset 权力；
-- `TB-BRANCH-1` 的结果码（`OWNER_INPUT_REQUIRED`、`BRANCH_ALREADY_EXISTS`、`DIRTY_WORKTREE`、`STAGED_CONTENT_CONFLICT`、`BASE_MISMATCH`、`TASK_ALREADY_EXISTS`、`REMOTE_NOT_SYNCED`、`BOOTSTRAP_COMPLETE`）是 Prompt 层输出标识，不进入 `state.yaml` schema，也不改变 Engine Gate；
+- `TB-BRANCH-1` 的结果码（`OWNER_INPUT_REQUIRED`、`BASE_UNRESOLVED`、`BASE_MISMATCH`、`BRANCH_ALREADY_EXISTS`、`TASK_ALREADY_EXISTS`、`TASK_DIR_CONFLICT`、`REMOTE_NOT_SYNCED`、`BOOTSTRAP_HELD`、`BOOTSTRAP_COMPLETE`）是 Prompt 层输出标识，不进入 `state.yaml` schema，也不改变 Engine Gate；
+- 工作区已有修改按「保留与隔离」处理：不得 `stash` / `reset --hard` / `clean` / 覆盖；保留内容使工作区无法 clean exit 时，`BOOTSTRAP_HELD` 必须如实报告，不得声称 HANDOFF；
 - 该例外不改变 §1.1：普通 Agent Session 的 Git 权限仍由 Owner 指令与宿主安全规则决定，不被 Workflow Role 白名单自动约束。
 
 ## 12. 跨任务全局资源预留

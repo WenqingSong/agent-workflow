@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Workflow V3.2.0 release engineering tool.
+"""Workflow V3.3.0 release engineering tool.
 
 职责边界：
 
@@ -148,7 +148,7 @@ REQUIRED_ROLES = (
     ".agent/roles/DelivererAgent.md",
 )
 
-# Specs 顶层规范完整清单（V3.2.0）。新增 / 删除规范必须同步这里与 PACKAGE_MANIFEST。
+# Specs 顶层规范完整清单（V3.3.0）。新增 / 删除规范必须同步这里与 PACKAGE_MANIFEST。
 REQUIRED_SPECS = (
     ".agent/specs/WorkflowAgentDirective.md",
     ".agent/specs/WorkflowRouteSelection.md",
@@ -2362,7 +2362,7 @@ def cmd_repro(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="release.py", description="Workflow V3.2.0 release engineering tool")
+    parser = argparse.ArgumentParser(prog="release.py", description="Workflow V3.3.0 release engineering tool")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_guard = sub.add_parser("guard", help="Tag / Annotated / Commit / VERSION 守卫")

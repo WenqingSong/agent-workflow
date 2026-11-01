@@ -1,4 +1,4 @@
-# Workflow Handoff Contract（V3.2.0-B）
+# Workflow Handoff Contract（V3.3.0）
 
 本文件定义七角色统一的**出站交接**规范：每个 Role 结束本轮执行时，必须在最终回答结尾明确下一步由谁处理、处理什么、依据哪份证据；跨 Role 失败必须给出可直接执行的下一角色 Prompt。
 
@@ -244,6 +244,8 @@ DELIVERER|DANGER|DANGER|NONE|STOP|none|NONE|YES
 TASK_BUILDER|READY_NORMAL|BOOTSTRAP_COMPLETE|CODER|HANDOFF|coder-start|REQUIRED|YES
 TASK_BUILDER|READY_COMPLEX|BOOTSTRAP_COMPLETE|ANALYST|HANDOFF|none|REQUIRED|YES
 TASK_BUILDER|READY_ARCHITECT|BOOTSTRAP_COMPLETE|ANALYST|HANDOFF|none|REQUIRED|YES
+TASK_BUILDER|HELD_PRESERVED_CHANGES|BOOTSTRAP_HELD|OWNER|STOP|none|NONE|YES
+TASK_BUILDER|BASE_UNRESOLVED|BASE_UNRESOLVED|OWNER|STOP|none|NONE|YES
 TASK_BUILDER|FAILED_BOOTSTRAP|BOOTSTRAP_FAILED|OWNER|FAILURE_HANDOFF|none|REQUIRED|YES
 TASK_BUILDER|REPAIR_IN_SCOPE|BOOTSTRAP_REPAIR_IN_SCOPE|TASK_BUILDER|SAME_SESSION|none|NONE|YES
 TASK_BUILDER|BLOCKED_OWNER_INPUT|OWNER_INPUT_REQUIRED|OWNER|OWNER_DECISION|none|NONE|YES
@@ -258,7 +260,7 @@ TASK_BUILDER|DANGER|DANGER|NONE|STOP|none|NONE|YES
 
 | Role | 必须保存的 Artifact | 允许的提交顺序 | 远端同步检查 | Gate 前置条件 |
 | --- | --- | --- | --- | --- |
-| TaskBuilder | `task.md`、`state.yaml` 初始化 | 单次 Artifact commit → push | local HEAD == `origin/<feature>`，tree clean | `NORMAL` 自检 `coder-start`；`COMPLEX` / `ARCHITECT` 无入口 Gate |
+| TaskBuilder | `task.md`、`state.yaml`、初始 Artifact；`task.md` 记录自动发现的基线 | 单次 `BOOTSTRAP` commit（pathspec 只含任务目录）→ push | local HEAD == `origin/<feature>`，tree clean；保留了他人修改而不 clean 时输出 `BOOTSTRAP_HELD`，不得声明 HANDOFF | `NORMAL` 自检 `coder-start`；`COMPLEX` / `ARCHITECT` 无入口 Gate |
 | Analyst | `contract.md`、`docs/design/*`、`state.contract`；Registry 例外文件 | A1 内容 commit → A2 `state.yaml` commit → push；Registry-only commit 单独 push `develop` | 同上，并核验 `origin/develop` Registry | `coder-start` |
 | Architect | `architecture.md`、结构骨架、结构测试、`state.review` | D1 结构快照 → D2 metadata → push | local HEAD == `origin/<feature>` | `cleaner-start` |
 | Coder | 生产代码、测试、`state.review` | C1 实现快照 → C2 metadata → push | local HEAD == `origin/<feature>` | `cleaner-start` |
@@ -271,7 +273,7 @@ TASK_BUILDER|DANGER|DANGER|NONE|STOP|none|NONE|YES
 ## 10. 诚实性与未知事实
 
 - 不得伪造 Commit SHA：未核验时写 `UNKNOWN`，并要求接收者先运行 `git rev-parse HEAD` / `git log -1 --format=%H` 核验；
-- 不得伪造任务路径：`task_path` 必须来自本次真实输入或 Git 事实；缺失时停止，不猜测 `task-slug`；
+- 不得伪造任务路径：`task_path` 必须来自本次真实输入、TB-NAME-1 的已生成并记录的 Slug，或 Git 事实；生成前必须确认目录与分支均不存在，已存在时不得复用，也不得用近似名称覆盖其他任务；
 - 不得伪造 Owner 授权：Owner 未明确表达时只能写 `OWNER_DECISION`，不得写 `ACCEPTED` / "Owner 已同意"；
 - 不得伪造测试、Gate 或构建结果：未执行写 `NOT_EXECUTED` / `NOT_VERIFIED`；
 - 不得用"Agent 自述已完成"代替证据；下一角色必须能只凭 Git + Artifacts 复核；
@@ -286,7 +288,7 @@ TASK_BUILDER|DANGER|DANGER|NONE|STOP|none|NONE|YES
 3. **合法停止 vs `NEXT_ROLE` 必填。** 必填指"必须明确给出唯一值"，`NONE` 是合法值。`DANGER` 与 Owner 终止任务必须 `NONE`；`BLOCKED` 允许 `OWNER`、`NONE`，或**缺失产物/交接的责任 Role**（例如 Coder 尚未形成 C1/C2 时由 Coder 先补完），但不得指向验收型下游（如 `BLOCKED → Cleaner`），也不得把该字段当作让下游继续执行的授权。
 4. **`AgentCollaborationSpecification` §5 "Owner Checkpoint 没有 NEXT_ROLE"。** 该表述针对"没有跨角色 Handoff"；本契约在输出层用 `NEXT_ROLE=OWNER` + `NEXT_ACTION=OWNER_DECISION` 标记同 Session 决策检查点，不构成 Handoff，也不写入 `state.yaml`。
 5. **DANGER / BLOCKED 不得生成越权执行指令。** 两者的 `HANDOFF_PROMPT` 一律 `NONE`；只允许在 `NEXT_ACTION` 中写明停止原因与恢复条件。
-6. **TaskBuilder 出站对齐。** `TaskBuilderPrompt.md` 在 V3.2.0 第二阶段集成中已改为与本契约相同的字段接口与出口表；六个业务角色的 Prompt、本契约与静态检查现在覆盖全部七个角色。TaskBuilder 初始化阶段的 Git 动作（`TB-BRANCH-1`）仍由该 Prompt 定义，本契约只固定其出站声明。
+6. **TaskBuilder 出站对齐。** `TaskBuilderPrompt.md` 与 V3.2.0 第二阶段集成时的字段接口和出口表一致；V3.3.0 新增 `BOOTSTRAP_HELD` 与 `BASE_UNRESOLVED` 两个终态，均只表示「初始化无法合法完成」，不改变任何 Gate。TaskBuilder 初始化阶段的 Git 动作（`TB-BRANCH-1`）仍由该 Prompt 定义，本契约只固定其出站声明。
 
 ## 12. 静态一致性与 SPEC_ONLY 边界
 

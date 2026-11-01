@@ -8,20 +8,20 @@ promote 门槛。它不重新实现 Gate、不改 State / Config Schema、不重
 ```bash
 # Tag / Annotated / Commit / VERSION 守卫（不通过即非零退出）
 # --expected-commit 是独立预期来源：CI 传 CNB_COMMIT，缺失时传 Git 对 Tag 的解析结果。
-python3 scripts/release/release.py guard --repo . --tag v3.2.0 \
-  --expected-commit "$(git rev-list -n 1 refs/tags/v3.2.0)" \
+python3 scripts/release/release.py guard --repo . --tag v3.3.0 \
+  --expected-commit "$(git rev-list -n 1 refs/tags/v3.3.0)" \
   --expected-commit-source git-tag-resolution
 
 # 解析仓库来源（正式仓库 / 独立 RC 测试仓库），无来源或来源冲突即失败
-python3 scripts/release/release.py repository --repo . --tag v3.2.0 --json
+python3 scripts/release/release.py repository --repo . --tag v3.3.0 --json
 
 # 构建全部资产（输出目录必须是独立的顶层未跟踪目录，例如 dist）
-python3 scripts/release/release.py build --repo . --output dist --tag v3.2.0 --json
+python3 scripts/release/release.py build --repo . --output dist --tag v3.3.0 --json
 
 # 资产集合 / SHA256SUMS / Binary / Source Distribution 全量校验
 # --commit 必填：不得回退到 version.json 自报的 Commit。
 python3 scripts/release/release.py verify-assets --dir dist --repo . \
-  --version 3.2.0 --tag v3.2.0 --commit <40-hex> \
+  --version 3.3.0 --tag v3.3.0 --commit <40-hex> \
   --report dist/reports/local-verification.json --json
 
 # 固定 9 项正式附件的上传前快照（独立记录每项 SHA256）
@@ -36,13 +36,13 @@ python3 scripts/release/release.py verify-uploaded --assets dist/expected --down
 # promote / latest 前置门槛（没有 PASS 报告就 BLOCKED）
 python3 scripts/release/release.py promote-gate --stage pre-promote \
   --report dist/reports/upload-verification.json --assets dist/expected \
-  --tag v3.2.0 --expected-commit <40-hex> --out dist/reports/promote-gate-pre.json
+  --tag v3.3.0 --expected-commit <40-hex> --out dist/reports/promote-gate-pre.json
 
 # 校验 .cnb.yml 的上传 / 下载 / 复核阶段是否覆盖完整 9 项（无 glob）
 python3 scripts/release/release.py check-pipeline --config .cnb.yml --dir dist --json
 
 # 两个独立克隆中各构建一次，比较资产是否逐字节一致（要求 Tag 存在）
-python3 scripts/release/release.py repro --repo . --tag v3.2.0 --json
+python3 scripts/release/release.py repro --repo . --tag v3.3.0 --json
 
 # 汇总各阶段报告（Release Verification Report）
 python3 scripts/release/release.py report --dir dist --reports dist/reports --require-all
@@ -57,10 +57,10 @@ python3 scripts/release/release.py list --dir dist --scope attachments --format 
 
 | 平台 | GOOS | GOARCH | 资产名 |
 | --- | --- | --- | --- |
-| Linux x86-64 | `linux` | `amd64` | `workflow-check_3.2.0_linux_amd64` |
-| Linux ARM64 | `linux` | `arm64` | `workflow-check_3.2.0_linux_arm64` |
-| macOS Apple Silicon | `darwin` | `arm64` | `workflow-check_3.2.0_darwin_arm64` |
-| Windows x86-64 | `windows` | `amd64` | `workflow-check_3.2.0_windows_amd64.exe` |
+| Linux x86-64 | `linux` | `amd64` | `workflow-check_3.3.0_linux_amd64` |
+| Linux ARM64 | `linux` | `arm64` | `workflow-check_3.3.0_linux_arm64` |
+| macOS Apple Silicon | `darwin` | `arm64` | `workflow-check_3.3.0_darwin_arm64` |
+| Windows x86-64 | `windows` | `amd64` | `workflow-check_3.3.0_windows_amd64.exe` |
 
 固定参数：
 
@@ -80,10 +80,10 @@ go build -trimpath -buildvcs=false -mod=readonly \
 
 | 类别 | 文件 | 说明 |
 | --- | --- | --- |
-| 业务 | 4 个 `workflow-check_3.2.0_*` | 四平台 Binary |
-| 业务 | `agent-workflow-src-3.2.0.tar.gz` | Source Distribution（P07 产出） |
-| 业务 | `agent-workflow-src-3.2.0.tar.gz.sha256` | Source Distribution 校验文件 |
-| 业务 | `agent-workflow-release-notes-3.2.0.md` | Release Notes |
+| 业务 | 4 个 `workflow-check_3.3.0_*` | 四平台 Binary |
+| 业务 | `agent-workflow-src-3.3.0.tar.gz` | Source Distribution（P07 产出） |
+| 业务 | `agent-workflow-src-3.3.0.tar.gz.sha256` | Source Distribution 校验文件 |
+| 业务 | `agent-workflow-release-notes-3.3.0.md` | Release Notes |
 | 元数据 | `SHA256SUMS` | 只覆盖 7 项业务资产 |
 | 元数据 | `version.json` | 7 项业务资产摘要 + `SHA256SUMS` 自身摘要 |
 
@@ -98,7 +98,7 @@ go build -trimpath -buildvcs=false -mod=readonly \
 - 每个资产标注验证等级：`runtime`（仅 Linux x86-64，真实执行 `version`）、
   `static`（交叉编译 + 文件头架构 + Go buildinfo + 注入字面值）、`content`、`derived`。
 
-Source Distribution **附件名固定为版本号形式**（`agent-workflow-src-3.2.0.tar.gz`），
+Source Distribution **附件名固定为版本号形式**（`agent-workflow-src-3.3.0.tar.gz`），
 这样 9 项附件名在 Tag 推送前就已确定，`.cnb.yml` 的上传与下载都能写精确文件名，
 不依赖 glob。Commit 绑定不受文件名影响：归档顶层目录、`MANIFEST.json`
 （`source.commit` / `source.repository`）、`version.json`、二进制注入值都记录完整事实。
@@ -121,7 +121,7 @@ Source Distribution **附件名固定为版本号形式**（`agent-workflow-src-
 - 正式仓库记为 `repository_mode=formal`，其他仓库记为 `independent-rc`；
 - `--repository` 只影响元数据，不参与 Tag / Commit 判定，不能用来绕过 Guard。
 
-## 5. CNB 流水线（`.cnb.yml` 的 `v3.2.0: tag_push`）
+## 5. CNB 流水线（`.cnb.yml` 的 `v3.3.0: tag_push`）
 
 顺序：toolchain → tag-guard（绑定 `CNB_COMMIT`）→ release-context（仓库来源）→
 engine-verification → adoption-e2e → build-assets → verify-assets-local（独立 `--commit`）→
@@ -144,7 +144,7 @@ verify-after-latest → promote-gate-latest → release-verification-report。
 ## 6. 平台不确定项（必须在独立 RC 仓库验证）
 
 以下行为在本地无法验证，正式发布前必须在**真正独立的 CNB 测试仓库**用 RC Tag 验证，
-不得用正式仓库的 `v3.2.0` Tag 做实验：
+不得用正式仓库的 `v3.3.0` Tag 做实验：
 
 1. `git:release` 的 `overlying: true` 在 Release 不存在时是否创建（本流程按“创建或更新”设计）；
 2. `overlying: true` 更新后是否保留已有附件（流程对此不信任，promote 后重新上传并重新下载核对）；
@@ -160,6 +160,6 @@ RC-C 未在独立仓库执行前，上述项一律标记 `NOT_VERIFIED`，不得
 ## 7. 禁止事项
 
 - 不在本目录或任何源码提交中存放 Release 资产 / 二进制；
-- 不创建正式 `v3.2.0` Tag、不创建正式 GA Release、不把 Release 标记为 latest；
-- 不修改 `main`，不 Force Push；
+- 不为未确认版本创建 Tag；`v3.3.0` 是本次唯一授权的发布 Tag；
+- 不 Force Push，不改写已发布历史；
 - 不上传 Docker Engine 镜像。

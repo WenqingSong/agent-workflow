@@ -390,6 +390,152 @@ class LifecycleTest(unittest.TestCase):
         self.assertEqual(bad.returncode, 1)
         self.assertIn("超出", bad.stdout)
 
+    def test_taskbuilder_bootstrap_accepts_all_initial_artifacts(self) -> None:
+        """TB 初始化会创建六个 Artifact；bootstrap 白名单必须覆盖它们，而不是只允许两件。"""
+        task = "six-files"
+        for name, text in (
+            ("task.md", "# task\n"),
+            ("state.yaml", state_text(task=task)),
+            ("findings.md", "# Findings\n"),
+            ("core-logic.md", "# Core Logic\n"),
+            ("owner-decision.md", "# Owner Decision\n"),
+            ("delivery.md", "# Delivery\n"),
+        ):
+            self.fx.write(f".agent/tasks/{task}/{name}", text)
+        self.fx.add(f".agent/tasks/{task}")
+        check = self.fx.tool(
+            "commit-check", "--role", "TaskBuilder", "--task", task, "--mode", "bootstrap"
+        )
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_taskbuilder_baseline_uses_current_branch_and_head(self) -> None:
+        """场景 1/3：当前 feature 分支即默认基线，不需要 Owner 提供分支名或 SHA。"""
+        proc = self.fx.tool("baseline", "--task", "next", "--branch", "task/next")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("status=READY", proc.stdout)
+        self.assertIn(f"branch={BRANCH}", proc.stdout)
+        self.assertIn(f"head={self.fx.head()}", proc.stdout)
+
+    def test_taskbuilder_baseline_protected_branch_is_valid_base(self) -> None:
+        """场景 2/4：当前分支是 develop/main 时仍以当前 HEAD 为基线，但目标分支必须另建。"""
+        self.fx._git(self.fx.work, "switch", "-q", "develop")
+        proc = self.fx.tool("baseline", "--task", "next", "--branch", "task/next")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("status=READY", proc.stdout)
+        self.assertIn("branch=develop", proc.stdout)
+        self.assertIn("kind=INTEGRATION", proc.stdout)
+
+        bad = self.fx.tool("baseline", "--task", "next", "--branch", "develop")
+        self.assertEqual(bad.returncode, 1)
+        self.assertIn("BRANCH_PROTECTED", bad.stdout)
+
+    def test_taskbuilder_baseline_detached_head_blocks(self) -> None:
+        """场景 5：detached HEAD 不得猜测基线。"""
+        self.fx._git(self.fx.work, "checkout", "-q", "--detach", "HEAD")
+        proc = self.fx.tool("baseline", "--task", "next", "--branch", "task/next")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("DETACHED_HEAD", proc.stdout)
+        self.assertIn("detached_candidates=", proc.stdout)
+        self.assertIn(BRANCH, proc.stdout, "必须报告包含 HEAD 的候选分支")
+
+    def test_taskbuilder_baseline_reports_preserved_foreign_changes(self) -> None:
+        """场景 6：既有修改被报告并保留，不要求工作区 clean。"""
+        self.fx.write("notes/keep.txt", "keep me\n")
+        proc = self.fx.tool("baseline", "--task", "next", "--branch", "task/next")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("READY_WITH_PRESERVED_CHANGES", proc.stdout)
+        self.assertIn("preserved=1", proc.stdout)
+        self.assertEqual((self.fx.work / "notes/keep.txt").read_text(encoding="utf-8"), "keep me\n")
+
+    def test_taskbuilder_baseline_detects_branch_conflicts(self) -> None:
+        """场景 8/9/10：本地、远端同名分支都必须被识别。"""
+        local = self.fx.tool("baseline", "--task", "next", "--branch", BRANCH)
+        self.assertEqual(local.returncode, 1)
+        self.assertIn("BRANCH_CONFLICT_LOCAL", local.stdout)
+
+        self.fx._git(self.fx.seed, "switch", "-q", "-c", "task/remote-only")
+        self.fx._git(self.fx.seed, "push", "-q", "origin", "task/remote-only")
+        remote = self.fx.tool("baseline", "--task", "next", "--branch", "task/remote-only")
+        self.assertEqual(remote.returncode, 1)
+        self.assertIn("BRANCH_CONFLICT_REMOTE", remote.stdout)
+
+        existing = self.fx.tool("baseline", "--task", TASK)
+        self.assertEqual(existing.returncode, 1)
+        self.assertIn("TASK_EXISTS", existing.stdout)
+
+    def test_taskbuilder_baseline_reports_ahead_behind_and_diverged(self) -> None:
+        """场景 7：远端领先 / 落后 / 分叉只报告，不自动 pull / reset / rebase。"""
+        self.fx.write("internal/local.go", "package internal\n")
+        self.fx.add("internal/local.go")
+        self.fx.commit("feat: 本地领先", ["internal/local.go"])
+        ahead = self.fx.tool("baseline", "--task", "next")
+        self.assertEqual(ahead.returncode, 0, ahead.stdout)
+        self.assertIn("sync=AHEAD", ahead.stdout)
+
+        other = self.fx.second_clone()
+        (other / "internal").mkdir(exist_ok=True)
+        (other / "internal/remote.go").write_text("package internal\n", encoding="utf-8")
+        self.fx._git(other, "add", "internal/remote.go")
+        self.fx._git(other, "commit", "-q", "-m", "feat: 远端前进")
+        self.fx._git(other, "push", "-q", "origin", BRANCH)
+        self.fx._git(self.fx.work, "fetch", "-q", "origin")
+
+        diverged = self.fx.tool("baseline", "--task", "next")
+        self.assertEqual(diverged.returncode, 0, diverged.stdout)
+        self.assertIn("sync=DIVERGED", diverged.stdout)
+        self.assertEqual(
+            self.fx._git(self.fx.work, "rev-parse", "HEAD").stdout.strip(),
+            self.fx.head(),
+            "baseline 不得自动 reset / rebase / pull",
+        )
+
+    def test_taskbuilder_bootstrap_preserves_staged_foreign_content(self) -> None:
+        """场景 6/16/17：外来已暂存内容保留且不进入 BOOTSTRAP；dirty 时不得 HANDOFF。"""
+        foreign = "internal/foreign.go"
+        self.fx.write(foreign, "package internal\n")
+        self.fx.add(foreign)
+
+        pre = self.fx.tool("preflight", "--role", "TaskBuilder", "--task", "next", "--bootstrap")
+        self.assertEqual(pre.returncode, 0, pre.stdout + pre.stderr)
+        self.assertIn("preserved_foreign=1", pre.stdout)
+
+        self.fx.write(".agent/tasks/next/task.md", "# Task: next\n")
+        self.fx.write(".agent/tasks/next/state.yaml", state_text(task="next"))
+        for name in ("findings.md", "core-logic.md", "owner-decision.md", "delivery.md"):
+            self.fx.write(f".agent/tasks/next/{name}", f"# {name}\n")
+        self.fx.add(".agent/tasks/next")
+        check = self.fx.tool(
+            "commit-check",
+            "--role",
+            "TaskBuilder",
+            "--task",
+            "next",
+            "--mode",
+            "bootstrap",
+            "--preserve-foreign",
+        )
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertIn("preserved_staged=1", check.stdout)
+
+        self.fx._git(
+            self.fx.work, "commit", "-q", "-m", "chore(task): 初始化 next", "--", ".agent/tasks/next"
+        )
+        changed = self.fx._git(
+            self.fx.work, "show", "--name-only", "--format=", "HEAD"
+        ).stdout.split()
+        self.assertTrue(changed)
+        self.assertTrue(
+            all(path.startswith(".agent/tasks/next/") for path in changed),
+            f"BOOTSTRAP 不得提交任务目录外内容: {changed}",
+        )
+        self.assertEqual((self.fx.work / foreign).read_text(encoding="utf-8"), "package internal\n")
+        staged = self.fx._git(self.fx.work, "diff", "--cached", "--name-only").stdout
+        self.assertIn(foreign, staged, "外来已暂存内容必须保留在暂存区")
+
+        handoff = self.fx.tool("handoff-check", "--role", "TaskBuilder", "--task", "next")
+        self.assertEqual(handoff.returncode, 1)
+        self.assertIn("dirty", handoff.stdout)
+
     # ---------- GL-04：未完成 Evidence 阶段不得 HANDOFF ----------
 
     def test_gl04_incomplete_evidence_blocks_handoff(self) -> None:
@@ -811,7 +957,14 @@ class RoleWiringTest(unittest.TestCase):
         self.assertTrue(TOOL.stat().st_mode & 0o111, "git-lifecycle-check 必须可执行（100755）")
         proc = run(["python3", str(TOOL), "--help"], REPO)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        for sub in ("preflight", "commit-check", "push-check", "verify-remote", "handoff-check"):
+        for sub in (
+            "baseline",
+            "preflight",
+            "commit-check",
+            "push-check",
+            "verify-remote",
+            "handoff-check",
+        ):
             self.assertIn(sub, proc.stdout)
 
     def test_danger_and_blocked_wording_kept_in_all_roles(self) -> None:

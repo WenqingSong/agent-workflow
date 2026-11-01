@@ -110,7 +110,7 @@ Role 认为继续执行会违反自身职责或安全约束时，输出 `BLOCKED
 | 循环熔断（两轮预算 / 账本 / DANGER / Owner 恢复） | `.agent/specs/WorkflowLoopCircuitBreaker.md` |
 | 跨 Session HANDOFF 字段与格式（Agent B 提供） | `.agent/specs/WorkflowHandoffContract.md` |
 | Git Lifecycle（Stage / Commit / Push / Gate / HANDOFF 时机） | `.agent/specs/WorkflowGitLifecycle.md` |
-| Git 只读前置自检（SPEC_ONLY） | `.agent/specs/tools/git-lifecycle-check` |
+| Git 只读前置自检（SPEC_ONLY；含 `baseline` 基线事实发现） | `.agent/specs/tools/git-lifecycle-check` |
 | 首次跨项目 Adoption | `.agent/specs/WorkflowAdoption.md` + `.agent/templates/PROJECT_ADAPTATION.template.md` |
 | 角色 Prompt | `.agent/roles/*.md` |
 | 机器配置 | `.agent/workflow.yaml` |

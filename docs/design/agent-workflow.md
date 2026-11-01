@@ -1,6 +1,6 @@
 # Agent Workflow V3 — 核心架构设计
 
-> **Workflow V3 Baseline**（`.agent/VERSION` = `3.1.0`）
+> **Workflow V3 Baseline**（`.agent/VERSION` = `3.3.0`）
 >
 > 当前 Workflow 协作 / 工程架构 major version 为 **V3**。Baseline 包含：independent-session role workflow（`NORMAL` / `COMPLEX` 六角色，`ARCHITECT` 增加 Architect 且不经过 Cleaner，见 §32）、Evidence Snapshot、machine gates、Generic Shared Resources、strict YAML、independent Workflow Engine module、Adoption mechanism。
 >
@@ -92,8 +92,8 @@ Owner 保留四类真正需要人判断的职责：Task / Branch Boundary、Cont
 ### Owner 控制区
 
 1. **Task / Feature Branch Lifecycle**：创建 feature branch、删除 branch、重命名 branch、branch boundary 决策。
-   - **受控初始分支例外**（已批准的 P00-R1 契约，V3.1）：TaskBuilder 在任务初始化时可以在受控条件下创建该任务自己的初始 feature branch。它不是通用分支权限，触发条件、允许的命令序列、拒绝条件与证据要求由 P03 在 `.agent/roles/TaskBuilderPrompt.md` 与 `.agent/specs/AgentCollaborationSpecification.md` 中定义。
-   - 本节只同步设计语义，不复制 P03 的规则文本，也不把例外扩大为「Agent 可自由创建 / 删除 / 重命名分支」。除此之外，分支生命周期仍是 Owner Authority。两处文本的一致性由集成检查点核对。
+   - **受控初始分支例外**（已批准的 P00-R1 契约，V3.1；V3.3 扩展为自主初始化）：TaskBuilder 在任务初始化时创建该任务自己的初始 feature branch。以**当前检出分支与当前 HEAD**为默认基线，自动生成 Task Slug 与 `task/<task-slug>`；Owner 显式指定的名称与基线优先。触发条件、允许的命令序列、拒绝条件与证据要求由 `.agent/roles/TaskBuilderPrompt.md`（`TB-BRANCH-1` / `TB-BASE-1` / `TB-NAME-1`）定义。
+   - 本节只同步设计语义，不复制 Prompt 的规则文本，也不把例外扩大为「Agent 可自由创建 / 删除 / 重命名分支」。除此之外，分支生命周期、Merge 与最终集成仍是 Owner Authority。
 2. **Shared Integration**：feature → develop、merge 时机、merge 顺序、merge / squash 策略、最终 integration 决策。
 
 ### Agent Autonomous Zone
@@ -160,7 +160,7 @@ git fetch
 
 | 所有者 | 拥有的 Artifact |
 |---|---|
-| TaskBuilder | `task.md`、task initialization / task metadata |
+| TaskBuilder | `task.md`（含基线、依赖与路线事实）、task initialization / task metadata |
 | Analyst | `contract.md`、业务设计文档（`docs/design/*`）、resource proposal / contract 状态 |
 | Architect | `architecture.md`、结构骨架、结构测试（仅 `ARCHITECT`；结构验证阶段只读） |
 | Coder | 业务代码、migration、tests、实现相关文件 |
@@ -565,7 +565,7 @@ Decision Checkpoint（`WAITING_FOR_OWNER_DECISION`）**不是 Handoff**。
 
 当前 Workflow V2 **不保留**一个名为 `WAITING_FOR_OWNER_ACTION` 的持久状态。
 
-Owner-only 动作（例如 Owner 创建 / 切换 feature branch；§3 的 `TB-BRANCH-1` 受控初始分支创建除外）发生在**角色 Session 之外**：Owner 在流程开始前或角色交接间隙准备 branch。如果 Agent 在 Session 中发现需要 Owner 执行某个只有 Owner 有 Authority 的动作、且动作完成后原角色仍需继续工作，这属于**同 Session 内的一次 Owner Action 请求**——Agent 暂停等待，Owner 完成后原 Session 继续，不机械理解成 Role Handoff，也不持久化一个独立状态。
+Owner-only 动作（例如 Owner 创建 / 切换 feature branch；§3 的 `TB-BRANCH-1` 受控初始分支创建除外）发生在**角色 Session 之外**：Owner 在流程开始前或角色交接间隙准备 branch。V3.3 起，Owner 只需提出任务目标或清单；TaskBuilder 会以当前检出分支与当前 HEAD 为默认基线，自动生成 Task Slug 与 Feature Branch，并完成初始 Commit / Push。Owner 显式指定名称或基线时仍以其为准。如果 Agent 在 Session 中发现需要 Owner 执行某个只有 Owner 有 Authority 的动作、且动作完成后原角色仍需继续工作，这属于**同 Session 内的一次 Owner Action 请求**——Agent 暂停等待，Owner 完成后原 Session 继续，不机械理解成 Role Handoff，也不持久化一个独立状态。
 
 只有当前角色**真的无法继续**、且不能通过简单 Decision / Owner Action 恢复时，才进入 `blocked.active=true`（BLOCKED，见 §19）。
 
@@ -627,7 +627,7 @@ git add -A / git add .
 
 Analyst 的 Registry-only develop exception 单独按 §4 Registry Authority 规则处理。
 
-TaskBuilder 的受控初始分支创建（`TB-BRANCH-1`）单独按 §3 与 `.agent/roles/TaskBuilderPrompt.md` 处理：仅限 Owner 逐项授权的**当前任务初始** Feature Branch，不构成通用创建分支权限，也不改变本节其余允许 / 禁止项。
+TaskBuilder 的受控初始分支创建（`TB-BRANCH-1`）单独按 §3 与 `.agent/roles/TaskBuilderPrompt.md` 处理：仅限**当前任务初始** Feature Branch，基线来自当前环境，不构成通用创建分支权限，也不改变本节其余允许 / 禁止项。保留他人未提交修改时，`BOOTSTRAP_HELD` 必须如实报告，不得为了 clean exit 而提交或清理这些修改。
 
 ---
 
@@ -937,6 +937,37 @@ Engine **不能**保证：执行 V1 的 Session 不是 Architect 本人、Git �
 ### 非回归
 
 `NORMAL` / `COMPLEX` 的角色顺序、Contract / Review / Owner / Delivery 语义、五个 Gate、`state.yaml` schema 与本路线引入前完全一致。`ARCHITECT` 只新增角色 Prompt 与文档语义，`workflow-check` 无代码变更。
+
+---
+
+## 33. TaskBuilder 自主初始化与任务依赖（V3.3）
+
+### 为什么需要
+
+V3.1.0 的 `TB-BRANCH-1` 把分支名、起始基线、完整 Commit SHA、Task Slug 与创建授权都列为 Owner 必填输入。它把本可由 Agent 从 Git 现场发现、从任务目标生成的信息变成了人工输入，导致：
+
+- Owner 必须充当人工配置器，违背「Owner 只做决策」的目标；
+- 当前分支与 HEAD 明明是真实基线，却被要求再抄一遍；
+- T02 尚未交付时，T03 即使只需要参考 T02 也无法初始化；
+- 名称冲突、脏工作区等可由 Agent 处理的情况被机械升级为 Owner 阻塞。
+
+### V3.3 规则
+
+| 主题 | 规则 |
+| --- | --- |
+| Owner 输入 | 任务目标 / 任务清单 + 可选约束；Slug、分支名、基线与创建授权都不再是必填 |
+| 授权 | Owner 明确要求创建 / 初始化 / 执行任务，即授权创建当前任务初始分支；不扩大到 Merge / Rebase / Force / 删除分支 / Push 共享分支 |
+| 基线 | 当前检出分支 + 当前 HEAD 为默认；不切换到所谓主分支，不用远端 SHA 替换当前 HEAD |
+| 远端差异 | 只记录 `AHEAD` / `BEHIND` / `DIVERGED`，不自动 pull / merge / rebase / reset |
+| detached HEAD | `BASE_UNRESOLVED`，报告候选与 reflog，由 Owner 指定，不猜 |
+| 命名 | `TB-NAME-1` 从目标生成 kebab-case slug 与 `task/<slug>`；冲突时先改名，不覆盖 |
+| 脏工作区 | 任务目录外的既有修改保留并隔离；pathspec 提交只含任务目录；无法 clean exit 时 `BOOTSTRAP_HELD` |
+| 依赖 | `Blocking` / `Reference-only` / `Parallel` 三类，只写入 `task.md`，不升级 state schema |
+| 机器支撑 | `git-lifecycle-check baseline` 只读报告现场事实；Gate 与 Engine 语义不变 |
+
+### 诚实边界
+
+`baseline` 是只读事实工具，不会创建分支、不会写任务文件，也不能证明 LLM 一定按 Prompt 决策。`BOOTSTRAP_COMPLETE` / `BOOTSTRAP_HELD` / `BASE_UNRESOLVED` 都是 Prompt 层结果码，不进入 `state.yaml`，不改变五个 Gate。真实防线仍是 Git 证据、`handoffReady` 的 clean + remote 核验与 Owner 决策。
 
 ---
 
