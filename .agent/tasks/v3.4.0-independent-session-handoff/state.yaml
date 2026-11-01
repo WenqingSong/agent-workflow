@@ -3,7 +3,7 @@ task_id: v3.4.0-independent-session-handoff
 route: COMPLEX
 contract:
   status: APPROVED
-  target: "1677a6f9ae76dde9d9e64cf8a90b148549b2a9ae"
+  target: "3d11ded58fa89705b8ebb0ad658acc9121bc0198"
 resources:
   reservations: {}
 review:
