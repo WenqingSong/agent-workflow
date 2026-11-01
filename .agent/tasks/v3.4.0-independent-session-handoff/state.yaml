@@ -7,7 +7,7 @@ contract:
 resources:
   reservations: {}
 review:
-  status: PENDING
+  status: CLEAN
   target: "1b6fef5478ec4434859d95f342a5884e23ad342e"
 owner:
   status: PENDING

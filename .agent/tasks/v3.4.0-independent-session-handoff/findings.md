@@ -66,3 +66,43 @@ CLEAN
 - 三个 P2/P3 均已核实并处置或披露；
 - 静态与行为证据均可从当前 Commit 复现；
 - 未修改 `review.target` 指向的历史。
+
+---
+
+## 复审（re_review）— Owner 决策 B
+
+- 触发：Owner 明确选择 Q2=B，要求框架仓库可跟踪自身 `.agent/tasks/**`。
+- 复审对象：`state.review.target` 指向的新快照。
+
+### 变更核查
+
+| 项 | 结论 | 证据 |
+| --- | --- | --- |
+| dist 不再拒绝 tracked Task | PASS | `EXCLUDABLE_TASK_PREFIX` + `classify_path` 分支；`test_tracked_task_data_is_excluded_not_rejected` |
+| Task 不进入归档 / MANIFEST | PASS | 同一用例断言归档无 `.agent/tasks/` 且 `manifest.files` 无该前缀 |
+| install 源与 dist 一致 | PASS | 安装源同样豁免；`test_workflow_adoption.py` 33 项全通过（含 6 项 install E2E） |
+| 其他宿主数据仍 fail-closed | PASS | `test_tracked_host_data_is_rejected`（`workflow.yaml` → `SOURCE_INVALID`）保持通过 |
+| 引擎仍未改 | PASS | `git diff main..HEAD -- .agent/engine` = 0 行 |
+
+### 全量回归（本轮真实执行）
+
+| 套件 | 结果 |
+| --- | --- |
+| Go `test`（2 包）/ `vet` | PASS |
+| `test_handoff_contract.py` | 21 OK |
+| `test_cold_start.py` | 10 OK |
+| `test_taskbuilder_autonomy.py` | 18 OK |
+| `test_route_acceptance.py` | 10 OK |
+| `test_git_lifecycle.py` | 32 OK |
+| `test_workflow_adoption.py` | 33 OK（较上轮 +1） |
+| `test_release_scripts.py` | 59 OK |
+
+合计 183 个 Python 测试通过。
+
+### Finding 状态更新
+
+- **CLEAN-001 → CLOSED（由 Owner 决策 B 关闭）**：框架仓库自托管不再与分发包契约冲突。剩余边界：宿主项目的 Task 仍不应进入上游源码库（无机器检查，属约定）。
+
+## Result
+
+CLEAN
