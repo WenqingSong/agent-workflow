@@ -77,7 +77,33 @@ Coder 负责生产代码和测试，不为展示过程而重复维护上述文�
 
 `architecture.md` 属于**实质结构事实**，不在 Review-neutral / Delivery-neutral 白名单内：它必须与结构骨架、结构测试一起进入 D1，D1 之后的任何修改都会使旧 Review Evidence 失效。
 
-`state.yaml` 只保存 Git 无法推导的决策事实，**不保存** `phase`/`STALE`/`DONE`/`branch`/`HEAD`/`working_tree`/`changed_files`/`NEXT_ROLE`/`NEXT_ACTION`。详见 `docs/design/agent-workflow.md`。
+`state.yaml` 只保存 Git 无法推导的决策事实，**不保存** `phase`/`STALE`/`DONE`/`branch`/`HEAD`/`working_tree`/`changed_files`/`NEXT_ROLE`/`OWNER_ACTION`。详见 `docs/design/agent-workflow.md`。
+
+### 4.1 Artifact × Role 输入所有权
+
+哪个 Artifact 可能是哪个角色的输入是固定的；角色不得等上一角色"告知"本表已有的内容：
+
+| Artifact | TaskBuilder | Analyst | Architect | Coder | Cleaner | OwnerGate | Deliverer |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `task.md` | 写 | 读 | 读 | 读 | 读 | 读 | 读 |
+| `state.yaml` | 写 | 读写 | 读写 | 读写 | 读写 | 读写 | 读写 |
+| `contract.md` | — | 写 | 读 | 读 | 读 | 读 | 读 |
+| `findings.md` | 建空 | 读 | 读 | 读 | 写 | 读 | 读 |
+| `core-logic.md` | 建空 | 读 | 读 | — | 写 | 读 | 读 |
+| `owner-decision.md` | 建空 | 读 | 读 | 读 | — | 写 | 读 |
+| `delivery.md` | 建空 | 读 | 读 | 读 | — | 读 | 写 |
+| `architecture.md` | — | 读 | 写 | 读 | — | 读（V1 只读） | 读 |
+| `loop-ledger.md` | 读 | 读写 | 读写 | 读写 | 读写 | 读写 | 读写 |
+
+**硬规则**：
+
+1. 角色只能在 Task Artifact、`state.yaml`、Git 与 Gate 输出中取事实；**不得**把上一角色的聊天叙述、历史 `HANDOFF_PROMPT` 或「口头说明」当作事实来源。
+2. 失败原因必须先落到上表对应的 Artifact（Cleaner `findings.md`、OwnerGate `owner-decision.md`、Deliverer `delivery.md`、其他角色 `loop-ledger.md`），再发出交接；没有落盘的失败原因视为未发生。
+3. 角色不得要求 Owner 提供本表已能读取的信息（分支、基线、SHA、mode、Finding 编号）。
+
+### 4.2 角色启动与阶段判定
+
+角色的启动串、开工声明、阶段推导与 `mode` 推导统一由 `.agent/specs/WorkflowAgentDirective.md` §2.1–§2.4 定义（含 §2.2 阶段推导表）。本节与各角色 Prompt 只引用，不复制推导表。
 
 ## 5. 默认路由
 
@@ -117,7 +143,7 @@ TaskBuilder 判定路线（TB-ROUTE-1）并记录 Owner 授权的基线
 
 `ARCHITECT` 只能在 Task 与已批准 Contract 都限定为结构交付时使用。需要完整业务功能、数据库 Migration、未批准的 DB Schema 变更、新外部依赖或构建/部署模型变化时，Architect 停止并回交 Analyst/Owner，由 Owner 明确决定是否切换到 `COMPLEX`；切换后必须重新核对 Contract 与 Evidence，`ARCHITECT` 的 `CLEAN` 不得当作 `COMPLEX` 的 Cleaner 结论。
 
-Owner Checkpoint（`WAITING_FOR_OWNER_DECISION`）不是跨角色 Handoff：不结束当前 Session，也不产生新的接收者。出站层按 `.agent/specs/WorkflowHandoffContract.md` §5 用 `NEXT_ROLE=OWNER` + `NEXT_ACTION=OWNER_DECISION` 标记该检查点，`HANDOFF_PROMPT=NONE`；这些字段不写入 `state.yaml`，Owner 回复后原 Agent 在同一 Session 继续。
+Owner Checkpoint（`WAITING_FOR_OWNER_DECISION`）不是跨角色 Handoff：不结束当前 Session，也不产生新的接收者。出站层按 `.agent/specs/WorkflowHandoffContract.md` §5 用 `NEXT_ROLE=OWNER` + `OWNER_ACTION=DECIDE:` 标记该检查点；这些字段不写入 `state.yaml`，Owner 回复后原 Agent 在同一 Session 继续。
 
 ## 6. 阶段关口（Gate）
 

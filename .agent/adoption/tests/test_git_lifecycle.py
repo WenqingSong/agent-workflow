@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -146,6 +147,34 @@ class Fixture:
         self._config(other)
         return other
 
+
+TASK_MD = """# Task: demo
+
+## Goal
+证明冷启动可以只读 Task 目录开工。
+
+## Scope
+- 一个可观察的实现结果。
+
+## Out of Scope
+- 无关模块。
+
+## Acceptance Criteria
+- [ ] AC-001：给定有效输入，当调用入口时，返回成功结果。
+- [ ] AC-002：失败时返回明确错误。
+
+## Verification
+- AC-001 → 单元测试；AC-002 → 错误路径测试。
+
+## Complexity
+NORMAL
+
+## Review Baseline
+- Base branch：develop
+- Base commit：__BASE__
+- Feature branch：feature/demo
+- Remote：origin
+"""
 
 CONFIG = """schema_version: 1
 git:
@@ -912,6 +941,129 @@ class LifecycleTest(unittest.TestCase):
             "push-check", "--role", "Analyst", "--task", TASK, "--mode", "registry"
         )
         self.assertEqual(registry.returncode, 0, registry.stdout)
+
+
+    # ---------- GL-14 ~ GL-16：冷启动事实与失败恢复 ----------
+    # 断言只使用「Task 目录 + git 命令」，不读取任何聊天或交接叙述。
+
+    def read_task_dir(self, name: str) -> str:
+        return (self.fx.work / f".agent/tasks/{TASK}/{name}").read_text(encoding="utf-8")
+
+    def git(self, *args: str) -> str:
+        proc = self.fx._git(self.fx.work, *args)
+        return proc.stdout.strip()
+
+    def add_route(self, route: str = "COMPLEX") -> None:
+        path = f".agent/tasks/{TASK}/state.yaml"
+        body = (self.fx.work / path).read_text(encoding="utf-8")
+        assert "route:" not in body
+        body = body.replace("task_id: demo\n", f"task_id: demo\nroute: {route}\n", 1)
+        self.fx.write(path, body)
+        self.fx.add(path)
+        self.fx.commit("chore(state): 记录路线", [path])
+        self.fx.push()
+
+    def write_full_task(self) -> None:
+        base = self.git("rev-parse", "HEAD")
+        self.fx.write(
+            f".agent/tasks/{TASK}/task.md",
+            TASK_MD.replace("__BASE__", base),
+        )
+        self.fx.add(f".agent/tasks/{TASK}/task.md")
+        self.fx.commit("docs(task): 完整任务定义", [f".agent/tasks/{TASK}/task.md"])
+
+    def test_gl14_cold_start_facts_are_derivable(self) -> None:
+        """只读 Task 目录 + Git，即可得到审查所需的全部事实。"""
+        self.write_full_task()
+        c1 = self.make_c1()
+        self.make_c2(c1)
+        self.add_route("NORMAL")
+        self.fx.push()
+
+        # 1) 入口 Gate 可运行且 PASS（新 Session 唯一的机器起点）
+        gate = self.fx.gate("cleaner-start")
+        self.assertEqual(gate.returncode, 0, gate.stdout + gate.stderr)
+
+        # 2) 审查对象：state.review.target 是可解析的完整 SHA
+        state = self.read_task_dir("state.yaml")
+        self.assertIn(f'target: "{c1}"', state)
+        self.assertEqual(self.git("cat-file", "-t", c1), "commit")
+        self.assertRegex(c1, r"^[0-9a-f]{40}$")
+
+        # 3) 审查基线：task.md 记录了 base commit 且可在 Git 中解析
+        task_md = self.read_task_dir("task.md")
+        base = re.search(r"Base commit：([0-9a-f]{40})", task_md).group(1)
+        self.assertEqual(self.git("cat-file", "-t", base), "commit")
+
+        # 4) 验收标准：AC 可计数
+        acs = re.findall(r"(?m)^- \[ \] (AC-\d{3})：", task_md)
+        self.assertEqual(acs, ["AC-001", "AC-002"])
+
+        # 5) 路线：state.route 与 task.md 的 Complexity 一致
+        self.assertIn("route: NORMAL", state)
+        self.assertIn("NORMAL", task_md.split("## Complexity", 1)[1].splitlines()[1])
+
+        # 6) mode 可由 review.status 推导（不依赖 Owner 输入）
+        self.assertIn("status: PENDING", state.split("review:", 1)[1])
+        mode = "initial_review" if "status: PENDING" in state.split("review:", 1)[1] else "re_review"
+        self.assertEqual(mode, "initial_review")
+
+    def test_gl15_failure_handoff_is_recoverable_and_neutral(self) -> None:
+        """失败交接写入 loop-ledger 后：可从 Git 恢复，且不使 CLEAN 失效。"""
+        self.write_full_task()
+        c1, _ = self.make_review_ready()
+        self.make_clean(c1)
+
+        ledger = f".agent/tasks/{TASK}/loop-ledger.md"
+        self.fx.write(
+            ledger,
+            "# Loop Ledger\n\n"
+            "- Task ID: demo\n"
+            "- Ledger Version: 1\n\n"
+            "## EV-0001 REQUEST FAILURE_HANDOFF S1 round=1\n\n"
+            "- event_id: EV-0001\n"
+            "- event_type: REQUEST\n"
+            "- role: Coder\n"
+            f"- evidence_commit: {c1}\n"
+            "- anchor: AC-002 / 运行时错误\n"
+            "- root_cause: 依赖服务在测试环境不可用\n"
+            "- request_summary: 请求 Analyst 确认失败语义\n"
+            "- handoff_target: ANALYST\n"
+            "- receiver_action: 确认 AC-002 的失败语义并修订 Contract\n"
+            "- outcome: OPEN\n",
+        )
+        self.fx.add(ledger)
+        self.fx.commit("chore(loop): 记录失败交接", [ledger])
+        self.fx.push()
+
+        # 失败证据写入后，CLEAN 仍然有效（ledger 属于 Review-neutral）
+        gate = self.fx.gate("owner-gate-start")
+        self.assertEqual(gate.returncode, 0, gate.stdout + gate.stderr)
+
+        # 另一个 Session 只读 Git 就能恢复失败原因与接收者动作
+        shown = self.git("show", f"HEAD:{ledger}")
+        self.assertIn("handoff_target: ANALYST", shown)
+        self.assertIn("receiver_action:", shown)
+        self.assertIn("root_cause:", shown)
+
+    def test_gl16_task_builder_update_does_not_claim_clean(self) -> None:
+        """task.md 变更属于实质变化：既有 CLEAN 必须失效，不能交给 Cleaner。"""
+        self.write_full_task()
+        c1, _ = self.make_review_ready()
+        self.make_clean(c1)
+
+        self.fx.write(
+            f".agent/tasks/{TASK}/task.md",
+            TASK_MD.replace("AC-002：失败时返回明确错误。", "AC-002：失败时返回明确错误与重试提示。"),
+        )
+        self.fx.add(f".agent/tasks/{TASK}/task.md")
+        self.fx.commit("docs(task): Owner 更新验收条件", [f".agent/tasks/{TASK}/task.md"])
+        self.fx.push()
+
+        # 旧 CLEAN 已不对应当前 HEAD：OwnerGate 入口必须拒绝
+        self.assertNotEqual(self.fx.gate("owner-gate-start").returncode, 0)
+        # Cleaner 也不能在 CHANGES_REQUIRED/CLEAN 状态下复审
+        self.assertNotEqual(self.fx.gate("cleaner-start").returncode, 0)
 
 
 ROLE_PROMPTS = {

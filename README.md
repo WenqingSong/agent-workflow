@@ -11,8 +11,8 @@
 | 类型 | 可复制到其他 Git 仓库的源码包（source-vendored package） |
 | 核心组成 | 七角色协作规范、任务状态与证据文件、五个机器 Gate、Go 校验器、循环熔断（DANGER）协议、安装 / 升级工具 |
 | 运行依赖 | Git；构建校验器需要 Go 1.23+；安装 / 升级工具需要 Python 3.10+ |
-| 版本 | Workflow V3.3.0（源码版本 `3.3.0`）；Go Module 名 `workflow-v2-engine` 是保留的历史标识 |
-| 发布状态 | `v3.3.0` 由 Tag 推送触发 CNB 发布流水线；发布是否完成以 CNB Release、附件校验与 Git Tag 核验结果为准 |
+| 版本 | Workflow V3.4.0（源码版本 `3.4.0`）；Go Module 名 `workflow-v2-engine` 是保留的历史标识 |
+| 发布状态 | `v3.4.0` 由 Tag 推送触发 CNB 发布流水线；发布是否完成以 CNB Release、附件校验与 Git Tag 核验结果为准 |
 
 ## 为什么做这个项目
 
@@ -77,6 +77,28 @@ Owner 只需提供任务目标或任务清单。TaskBuilder 会：
 
 Owner 仍可显式指定 Slug、分支与基线；此时它们是硬约束。TaskBuilder 的 Git 权限没有扩大：仍然只创建当前任务的初始分支，不做 Merge、Rebase、Force Push 或删除分支。
 
+### 7. 基于 Task 的独立 Session 协作（V3.4）
+
+角色之间的交接不再依赖上一个 Agent 编写的说明书。开发者只提供角色与任务目录：
+
+```text
+以 CLEANER 角色执行任务：
+.agent/tasks/<task-slug>/
+```
+
+角色按 `.agent/specs/WorkflowAgentDirective.md` §2.1 的五步启动，输出开工声明（`ROLE` / `TASK` / `STAGE` / `TARGET` / `ENTRY_GATE`），并按 §2.2 的阶段推导表自行判断当前该做什么、走哪个入口 Gate。`mode` 与 Finding 编号不再作为必填输入，而是从 `state.yaml` 与 `findings.md` 推导。
+
+出站交接固定四行：
+
+```text
+RESULT: <本角色终态>
+NEXT_ROLE: <下一角色>
+TASK_PATH: .agent/tasks/<task-slug>/
+OWNER_ACTION: <NONE | CONTINUE | DECIDE: ... | DO: ... | STOP>
+```
+
+`HANDOFF_PROMPT` 已取消。任务事实、失败原因与 SHA 分别在 Task Artifact、`loop-ledger.md` 与 Git 中；交接块只做定位。失败交接必须在 `loop-ledger.md` 或对应 Artifact 落盘后才能发出。
+
 ## 安装与升级
 
 本仓库是 Source Distribution 的构建源，也可以作为宿主仓库的安装 / 升级来源。首次安装与升级使用 `.agent/adoption/workflow-adoption`，默认 Dry-run，确认计划后才写入：
@@ -105,7 +127,7 @@ Owner 仍可显式指定 Slug、分支与基线；此时它们是硬约束。Tas
 
 安装 / 升级不会创建或覆盖宿主根 `AGENTS.md`、根 README、CI、业务 Design、`.agent/workflow.yaml`、Tasks、Registry 与历史 Evidence。升级以 `.agent/upstream.yaml` 记录的精确 B 快照做三方比较；冲突、B 缺失或未授权删除时 fail closed。Registry 默认不创建，只有显式 `--resource KIND=PATH` 才创建空表。
 
-工具当前在 Linux 完成真实 E2E 验证；Windows 原生环境未验证，需使用 WSL2 / Linux 容器。`v3.3.0` Tag、Release 与 binary 资产由发布流水线产生；是否已完成 GA 以 CNB Release 与附件核验为准。
+工具当前在 Linux 完成真实 E2E 验证；Windows 原生环境未验证，需使用 WSL2 / Linux 容器。`v3.4.0` Tag、Release 与 binary 资产由发布流水线产生；是否已完成 GA 以 CNB Release 与附件核验为准。
 
 ## 仓库结构
 
@@ -134,6 +156,8 @@ GOWORK=off go -C .agent/engine build ./...
 python3 .agent/adoption/tests/test_workflow_adoption.py -v
 python3 .agent/adoption/tests/test_git_lifecycle.py -v
 python3 .agent/adoption/tests/test_taskbuilder_autonomy.py -v
+python3 .agent/adoption/tests/test_handoff_contract.py -v
+python3 .agent/adoption/tests/test_cold_start.py -v
 ```
 
 接入宿主项目后，可构建并运行一个具体任务的 Gate：
@@ -160,5 +184,6 @@ GOWORK=off go -C .agent/engine build -o ../bin/workflow-check ./cmd/workflow-che
 - 安装 / 升级工具的真实 E2E 仅在 Linux 临时 Git 仓库验证；macOS 与 Windows 原生环境未验证。Windows 使用 WSL2 / Linux 容器或按规范手工执行。
 - 发布 Binary 覆盖 Linux x86-64、Linux ARM64、macOS Apple Silicon、Windows x86-64 四个交叉编译目标；仅 Linux x86-64 在构建环境真实运行过，其余平台只经过交叉编译与静态检查（文件类型、架构、构建信息），不构成运行时保证。
 - 校验器不执行 Git 写操作，也不自动运行角色；分支生命周期与最终集成由人类 Owner 控制。
-- `v3.3.0` Tag、Release、校验和与发布 binary 由 Tag 推送触发的发布流水线产生；本文不预先声称平台已发布，实际状态以 CNB Release、附件 SHA256 与 Git Tag 的核验结果为准。
+- `v3.4.0` Tag、Release、校验和与发布 binary 由 Tag 推送触发的发布流水线产生；本文不预先声称平台已发布，实际状态以 CNB Release、附件 SHA256 与 Git Tag 的核验结果为准。
 - TaskBuilder 的自主初始化由 Prompt 与只读自检约束，Engine 不认证 LLM 是否遵守；机器事实只有 Git、`baseline` 输出与 Gate。
+- V3.4 的启动串、四字段交接与阶段推导表是**规范层约束**；Engine 不解析交接块。可执行证据来自 `test_cold_start.py`（规范一致性）与 `test_git_lifecycle.py` 的 GL-14/15/16（真实 Git + 真实 Gate）。真实 LLM 会话的冷启动验收需人工执行并记录，不能由静态测试代替。

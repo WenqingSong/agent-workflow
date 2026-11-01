@@ -202,7 +202,7 @@ Deliverer 可使用临时目录、临时 worktree、detached HEAD 等本地集�
 
 ## 10. 默认交接与 Gate
 
-每一角色正常 Handoff 前由本角色运行下一角色的入口 Gate（`.agent/bin/workflow-check gate <name> <task>`）：
+每一角色正常 Handoff 前由本角色运行下一角色的入口 Gate（`.agent/bin/workflow-check gate <name> <task>`）。**「谁该开工」不由本节的文字顺序决定，而由 `.agent/specs/WorkflowAgentDirective.md` §2.2 的阶段推导表决定**；本节只给出 Gate 与接收者的对应关系：
 
 ```text
 Analyst   → gate coder-start      → HANDOFF Coder（NORMAL / COMPLEX）| Architect（ARCHITECT）
@@ -213,6 +213,8 @@ OwnerGate V1（ARCHITECT）→ gate owner-gate-start → OwnerGate V2（同 Sess
 OwnerGate → gate delivery-start   → HANDOFF Deliverer
 Deliverer → gate merge-ready      → HANDOFF Owner
 ```
+
+出站交接固定四字段（`RESULT` / `NEXT_ROLE` / `TASK_PATH` / `OWNER_ACTION`），不生成下一角色的任务说明书；失败原因按 `AgentCollaborationSpecification.md` §4.1 落盘。
 
 每条 Handoff 前的统一出站顺序：本阶段验证完成 → `git status --short` / `git diff` 检查归属 → 显式 stage 本角色 owned artifacts → `git diff --cached --name-status` 核对 → commit（合法类型见 `.agent/specs/WorkflowGitLifecycle.md` §2）→ 普通 push 当前 feature → `git ls-remote` 核验远端 SHA == 本地 HEAD 且 working tree clean → 运行 Gate → `PASS` 才 HANDOFF。`CHANGES_REQUIRED`、Owner `REJECT`、Deliverer `FAIL` / `BLOCKED` 与 DANGER 的退回同样必须 Commit + Push + 远端核验，只是不经过下一角色入口 Gate。
 

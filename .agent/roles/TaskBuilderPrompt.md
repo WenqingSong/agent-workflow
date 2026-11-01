@@ -541,26 +541,17 @@ Owner 的变化影响已确认 Contract 时，交 Analyst 重新分析，不能�
 
 ### 出站交接契约
 
-必读 `.agent/specs/WorkflowHandoffContract.md`。最终回答必须以该规范 §2 的标准块结尾，标题固定为 `## 出站交接`，块之后不再附加任何文字：
-
-```text
-## 出站交接
-
-RESULT: <本角色终态结果码>
-CURRENT_ROLE: TASK_BUILDER
-NEXT_ROLE: <CODER | ANALYST | OWNER | NONE>
-NEXT_ACTION: <HANDOFF | FAILURE_HANDOFF | OWNER_DECISION | SAME_SESSION | STOP>: <一句话动作>
-NEXT_TARGET: <任务路径>；<状态字段 / Commit / 证据路径>
-HANDOFF_PROMPT: <NONE | 完整可复制 Prompt>
-```
+必读 `.agent/specs/WorkflowHandoffContract.md`。交接只给定位：`RESULT` / `NEXT_ROLE` / `TASK_PATH` / `OWNER_ACTION` 四行，标题固定为 `## 出站交接`，块之后不再附加任何文字。任务事实、基线 SHA 与验证命令都在 `task.md`、`state.yaml` 与 Git 中，不在交接块复述。
 
 本角色合法出口（与 `.agent/specs/WorkflowHandoffContract.md` §8 统一矩阵一致）：
 
 ```text
 # handoff-exits
-RESULT|NEXT_ROLE|NEXT_ACTION|GATE
+RESULT|NEXT_ROLE|ACTION|GATE
 BOOTSTRAP_COMPLETE|CODER|HANDOFF|coder-start
 BOOTSTRAP_COMPLETE|ANALYST|HANDOFF|none
+UPDATE_COMPLETE|CODER|HANDOFF|coder-start
+UPDATE_COMPLETE|ANALYST|HANDOFF|none
 BOOTSTRAP_HELD|OWNER|STOP|none
 BASE_UNRESOLVED|OWNER|STOP|none
 BOOTSTRAP_FAILED|OWNER|FAILURE_HANDOFF|none
@@ -568,33 +559,30 @@ BOOTSTRAP_REPAIR_IN_SCOPE|TASK_BUILDER|SAME_SESSION|none
 OWNER_INPUT_REQUIRED|OWNER|OWNER_DECISION|none
 BLOCKED|OWNER|STOP|none
 BLOCKED|NONE|STOP|none
+STOPPED|NONE|STOP|none
 DANGER|NONE|STOP|none
 ```
 
 - **正常交接**：`RESULT=BOOTSTRAP_COMPLETE`。`NORMAL` → `NEXT_ROLE=CODER` + `HANDOFF`，前提是 `coder-start` `PASS`；`COMPLEX` / `ARCHITECT` → `NEXT_ROLE=ANALYST` + `HANDOFF`（无入口 Gate，但 `route` 自检必须 `ROUTE_OK`）。两种情况都必须先完成 Commit + Push + 远端核验 + 工作区 clean；
-- **保留修改导致无法 clean exit**：`RESULT=BOOTSTRAP_HELD` + `NEXT_ROLE=OWNER` + `STOP`，报告已提交 / 已推送的 SHA、保留的文件清单与阻塞原因；不得为了交交接而丢弃、stash 或提交他人修改；
+- **`owner_update` 完成**：`RESULT=UPDATE_COMPLETE`。改动影响实现或验收 → `NEXT_ROLE=CODER`（`coder-start`）；改动的是 Contract / Design 前提 → `NEXT_ROLE=ANALYST`（无入口 Gate）。**不存在 `UPDATE_COMPLETE → CLEANER`**：`task.md` 不在 Review-neutral 白名单，任何 `task.md` 变更都会使既有 `CLEAN` 在 `owner-gate-start` 失效，且 `cleaner-start` 要求 `review.status=PENDING`。必须把「CLEAN 已失效、需重建 Evidence」写在 `state.yaml` 与 `loop-ledger.md`，不得声称旧 CLEAN 仍有效；
+- **保留修改导致无法 clean exit**：`RESULT=BOOTSTRAP_HELD` + `NEXT_ROLE=OWNER` + `STOP`，报告已提交 / 已推送的 SHA、保留的文件清单与阻塞原因；不得为了交接而丢弃、stash 或提交他人修改；
 - **基线无法确定**：`RESULT=BASE_UNRESOLVED` + `NEXT_ROLE=OWNER` + `STOP`，报告 HEAD、候选分支与 reflog，请 Owner 指定基线；
-- **初始化失败且需要其他 Role 接手**：`RESULT=BOOTSTRAP_FAILED` + `NEXT_ROLE=OWNER` + `FAILURE_HANDOFF`，并给出下文十项模板的完整 Prompt（例如 Owner 显式基线与现场不一致、需求与已确认 Contract 冲突且必须由 Owner 决定路线、Blocking 依赖未交付）；
-- **本角色范围内继续修复**：`RESULT=BOOTSTRAP_REPAIR_IN_SCOPE` + `NEXT_ROLE=TASK_BUILDER` + `SAME_SESSION`（例如 `coder-start` `FAIL` 但原因在本角色 Artifact / Git 收尾内）；不交接、不算终态；
-- **等待 Owner 决策**：`RESULT=OWNER_INPUT_REQUIRED`（业务目标歧义、显式输入非法、命名冲突无法解决）或 `BLOCKED` + `NEXT_ROLE=OWNER` + `OWNER_DECISION` / `STOP`；`HANDOFF_PROMPT=NONE`，不得用候选菜单代替最终选择；
+- **初始化失败且需要其他 Role 接手**：`RESULT=BOOTSTRAP_FAILED` + `NEXT_ROLE=OWNER` + `FAILURE_HANDOFF`；失败原因按下方「计数动作」写入 `loop-ledger.md`，交接块不复述（例如 Owner 显式基线与现场不一致、需求与已确认 Contract 冲突且必须由 Owner 决定路线、Blocking 依赖未交付）；
+- **本角色范围内继续修复**：`RESULT=BOOTSTRAP_REPAIR_IN_SCOPE` + `NEXT_ROLE=TASK_BUILDER` + `OWNER_ACTION=CONTINUE`（例如 `coder-start` `FAIL` 但原因在本角色 Artifact / Git 收尾内）；不交接、不算终态；
+- **等待 Owner 决策**：`RESULT=OWNER_INPUT_REQUIRED`（业务目标歧义、显式输入非法、命名冲突无法解决）→ `NEXT_ROLE=OWNER` + `DECIDE:`；`BLOCKED` → `NEXT_ROLE=OWNER` + `STOP`；不得用候选菜单代替最终选择；
 - **无人可解除的阻塞**：`BLOCKED` + `NEXT_ROLE=NONE` + `STOP`；
-- **DANGER**：按 `.agent/specs/WorkflowLoopCircuitBreaker.md` §8 持久化后输出 `NEXT_ROLE=NONE` + `STOP`，不生成任何下游执行 Prompt；
-- 该接口是 Prompt 层输出，不写入 `state.yaml`，也不改变任何 Gate 语义；`NEXT_ROLE` 必须逐字使用上述大写枚举，不得写「无」「Coder / Analyst」或任何候选列表。
+- **Owner 终止任务**：`RESULT=STOPPED` + `NEXT_ROLE=NONE` + `OWNER_ACTION=STOP`；**不得**写 `blocked.active=true`（终止 ≠ 阻塞）；
+- **DANGER**：按 `.agent/specs/WorkflowLoopCircuitBreaker.md` §8 持久化后输出 `NEXT_ROLE=NONE` + `STOP`，不生成任何下游执行指令；
+- 该接口是 Prompt 层输出，不写入 `state.yaml`，也不改变任何 Gate 语义；`NEXT_ROLE` 必须逐字使用大写枚举，不得写「无」「Coder / Analyst」或任何候选列表。
 
-### 失败交接的 HANDOFF_PROMPT
+### 计数动作（循环熔断）
 
-`NEXT_ACTION=FAILURE_HANDOFF` 时，`HANDOFF_PROMPT` 必须按 `.agent/specs/WorkflowHandoffContract.md` §4 的十项模板写成可直接执行的完整 Prompt，缺一不可：
+TaskBuilder 与其余六个角色使用同一套两轮预算。下列情形必须在 `loop-ledger.md` 追加 `REQUEST` 事件（含 `handoff_target` 与 `receiver_action`），commit + push 后才能发出交接；第二次同类请求即触发 `DANGER`：
 
-1. 接收 Role（与 `NEXT_ROLE` 一致）。
-2. Repository / Branch / Task Path。
-3. 当前 Commit 与证据状态（已核实的 SHA；未知写 `UNKNOWN` 并给出核验命令）。
-4. 路线 `NORMAL` / `COMPLEX` / `ARCHITECT`。
-5. 具体失败原因（结果码、`git` 命令输出、`workflow-check` / 自检输出）。
-6. 接收者应做什么（最小必要动作，不夹带新需求）。
-7. 允许修改的范围（文件 / 目录白名单）。
-8. 应验证的 Gate 与完成条件（Gate 名称只能来自五个既有 Gate，或明确「无入口 Gate」）。
-9. 不得修改的内容（Owner 已确认范围、Contract、其他角色 artifacts 等）。
-10. 完成后的下一步（回到哪个 Gate、交给哪个 Role、需要谁决策）。
+- `BOOTSTRAP_FAILED` → 其他 Role 或 `OWNER`；
+- `BASE_UNRESOLVED` 后 Owner 仍未给出可用基线；
+- `UPDATE_COMPLETE` 后 Owner 再次要求修改同一 `task.md` 的同一结论；
+- 同一任务重复出现 `BOOTSTRAP_HELD`。
 
-`HANDOFF_PROMPT` 必须能脱离本次对话被下一角色直接执行：写明仓库、任务路径、分支、Commit SHA 和需要读取的 Artifact，不引用「上面说过的」内容。正常的成功交接也必须给出可执行的接收者 Prompt（交给 `OWNER` 时 `HANDOFF_PROMPT=NONE`）。
+记账失败时按熔断规范输出 `BLOCKED` + `PERSISTENCE_FAILURE`，不得声称已记录。
 

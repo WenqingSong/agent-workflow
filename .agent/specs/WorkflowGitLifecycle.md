@@ -55,7 +55,7 @@ REMOTE_VERIFIED
   │  下一角色入口 Gate PASS
   ▼
 GATED
-  │  输出 HANDOFF（NEXT_ROLE / NEXT_TARGET / NEXT_ACTION）
+  │  输出四字段交接（RESULT / NEXT_ROLE / TASK_PATH / OWNER_ACTION）
   ▼
 HANDOFFED
 ```
@@ -236,7 +236,7 @@ Gate `PASS` 只证明机器事实满足约束：它不是 `CLEAN`、不是 Owner
 5. 远端 SHA 已用 `git ls-remote` 核验等于本地 HEAD；
 6. `git status --short` 为空；
 7. 下一角色入口 Gate `PASS`；
-8. `NEXT_ROLE` / `NEXT_TARGET` / `NEXT_ACTION` 明确，且不存在 `blocked.active=true` 或 DANGER 停机。
+8. `RESULT` / `NEXT_ROLE` / `TASK_PATH` / `OWNER_ACTION` 明确，且不存在 `blocked.active=true` 或 DANGER 停机。
 
 以下任一情况**禁止**输出 HANDOFF：
 
@@ -349,6 +349,7 @@ Gate FAIL 不要求为了「记录失败」而额外 commit；但不得删除、
 | `SRC-09` | `CLOSED` | TaskBuilder 角色 Prompt 的必读列表与 Directive §4 不一致 | Directive 要求包括 TaskBuilder 在内的所有角色读取 DANGER / Handoff / Git 规范；TaskBuilder 自身 Prompt 原本只列 4 项 | 统一入口固定在 Directive §4；TaskBuilder Prompt 已列出全部 7 项（含路线选择规范） | V3.2.0 第二阶段集成已关闭；`test_git_lifecycle.py` 的 `RoleWiringTest` 与 `test_handoff_contract.py` 覆盖 |
 | `SRC-10` | `CLOSED` | `.agent/specs/WorkflowHandoffContract.md` 由 Agent B 提供 | 独立分支不包含该文件；缺失时若 Role 自行发明 Handoff 字段会形成第二套契约 | Directive 明确引用该路径；缺失时不得自行发明，按 `BLOCKED`（`HANDOFF_CONTRACT_ABSENT`）处理 | V3.2.0 第二阶段已核验文件存在、进入 Distribution 必需成员，并接入七个角色 |
 | `SRC-11` | `RESOLVED` | V3.1.0 的 `TB-BRANCH-1` 把分支名、起始基线、完整 SHA、Task Slug 与创建授权都作为 Owner 必填输入 | 这些信息本可由 Agent 从现场发现或合理生成；强制 Owner 提供会把 Owner 变成人工配置器，并使 T02 未交付时 T03 无法初始化 | V3.3.0 改为：当前分支 / 当前 HEAD 为默认基线，Slug 与分支名自动生成，Owner 执行意图即授权；Owner 显式值仍为上层约束 | 规范与工具已更新；Git 权限边界未扩大（仍无 Merge / Rebase / Force / 删除分支 / Push 共享分支） |
+| `SRC-12` | `CLOSED` | 每个角色被要求用 `HANDOFF_PROMPT` 复述下一角色的任务说明（V3.3 及更早） | 审计证实 10 项内容中 9 项已在 Task / 共享规范中；复述导致长篇交接与事实漂移 | V3.4.0 改为四字段定位块（`RESULT` / `NEXT_ROLE` / `TASK_PATH` / `OWNER_ACTION`），失败原因落 `loop-ledger.md` 与各角色 Artifact；`WorkflowHandoffContract.md` §11 保留旧块只读兼容 | `test_handoff_contract.py` 与 `test_cold_start.py` 覆盖 |
 
 ## 12. Git 前置 / 后置自检（SPEC_ONLY）
 

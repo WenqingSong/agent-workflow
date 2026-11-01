@@ -1,16 +1,16 @@
-# Workflow V3.3.0 — Package Manifest
+# Workflow V3.4.0 — Package Manifest
 
 ## Workflow Version
 
-3.3.0
+3.4.0
 
 > 这是当前 `.agent/VERSION` 的内容版本（Source Version）。
 >
 > | 字段 | 值 |
 > | --- | --- |
-> | Source Version | `3.3.0` |
+> | Source Version | `3.4.0` |
 > | Source Commit | 真实完整 Git SHA（由发布构建从 `git rev-parse HEAD` 推导，不使用写死值） |
-> | Release Tag | `v3.3.0`（由发布流水线在 Tag 推送后创建；本文不预先声称 Release 已存在） |
+> | Release Tag | `v3.4.0`（由发布流水线在 Tag 推送后创建；本文不预先声称 Release 已存在） |
 > | Published Status | `NOT_RELEASED`（构建产物标记；平台发布状态由 CNB 流水线核验） |
 >
 > 版本号与 Git Commit 是两个独立字段：版本号来自 `.agent/VERSION`，Commit 来自
@@ -37,15 +37,15 @@ Source Distribution（源码分发包），由 `.agent/adoption/workflow-adoptio
 ## Included
 
 - Engine（`.agent/engine/`，独立 Go Module `workflow-v2-engine`）
-- Roles（`.agent/roles/`）
-- Specs（`.agent/specs/`：Workflow 专用指令入口、协作规范、职责边界、路线选择、统一交接契约、Git Lifecycle、循环熔断、Adoption / 安装 / 升级）
+- Roles（`.agent/roles/`，七个角色统一四字段交接与「角色 + Task 目录」输入）
+- Specs（`.agent/specs/`：Workflow 专用指令入口（含 Session Bootstrap Protocol 与 Stage Derivation Table）、协作规范（含 Artifact × Role 输入所有权）、职责边界、路线选择、统一交接契约 v2、Git Lifecycle、循环熔断（含 `handoff_target` / `receiver_action`）、Adoption / 安装 / 升级）
 - TaskBuilder 自主初始化规则（`TB-BRANCH-1` / `TB-BASE-1` / `TB-NAME-1` / `TB-DEP-1` / `TB-QUERY-1`，位于 TaskBuilder Prompt 与协作规范）
 - Specs Tooling（`.agent/specs/tools/git-lifecycle-check`，`managed`，`100755`）：只读 Git Lifecycle 自检（含 `baseline` 基线事实发现）；不可执行会使 `verify-dist` 失败
 - Templates（`.agent/templates/`：Adoption、workflow.yaml、upstream.yaml、clean registry）
 - Adoption tooling（`.agent/adoption/`：分发、首装、升级、校验、恢复）
 - Bootstrap material（`.agent/README.md`、`.agent/VERSION`、`.agent/bin/.gitignore`）
 - Architecture Design（`docs/design/agent-workflow.md`，`package_only`）
-- Release Notes（`docs/releases/v3.3.0.md`，`package_only`）
+- Release Notes（`docs/releases/v3.4.0.md`，`package_only`）
 - Release engineering（`scripts/release/`：四平台构建、资产校验、promote 门槛与失败注入测试，`package_only`）
 - Root `README.md`、本 Manifest、`.cnb.yml`（`package_only`）
 
@@ -112,7 +112,7 @@ archive top-level: agent-workflow-src-<commit12>/
 | Source Distribution 内容 | 见 `Source Distribution Contract` 与包内 `MANIFEST.json` |
 | 绝不能打包 | 见 `Excluded` |
 | Release Binary 位置 | 宿主 `.agent/bin/workflow-check`（`0755`，被 `.agent/bin/.gitignore` 忽略） |
-| 发布 Binary 命名 | `workflow-check_3.3.0_<goos>_<goarch>[.exe]`；四个目标：`linux_amd64`、`linux_arm64`、`darwin_arm64`、`windows_amd64` |
+| 发布 Binary 命名 | `workflow-check_3.4.0_<goos>_<goarch>[.exe]`；四个目标：`linux_amd64`、`linux_arm64`、`darwin_arm64`、`windows_amd64` |
 | Binary 构建参数 | `CGO_ENABLED=0`、`GOWORK=off`、`GOFLAGS=-mod=readonly`、`go build -trimpath -buildvcs=false -mod=readonly`；`-ldflags="-s -w -X main.version=<VERSION> -X main.commit=<HEAD> -X main.buildSource=release"` |
 | Binary 版本可核验 | `workflow-check version` / `version --json` 输出 framework_version、source_commit、build_source、go_version、platform；`build_source=release` 表示发布资产，`source` 表示从分发包 Engine 构建，未注入时为 `dev` / `unknown` |
 | 安装后 Binary 自证 | 从分发包构建的 `.agent/bin/workflow-check` 注入分发包的版本与 Commit（`build_source=source`）；使用发布资产安装时为 `build_source=release` |
@@ -127,9 +127,9 @@ archive top-level: agent-workflow-src-<commit12>/
 | Host 最终状态验证 | `workflow-adoption verify --target <host>`；必须检查文件、binary、B 快照、真实 Gate 与历史 Evidence |
 | 发布顺序 | `tag_push` → 守卫 → 构建 + 校验 → pre-release（`preRelease=true, latest=false`）→ 上传附件 → 平台侧重新下载核对 → promote（`overlying=true`）→ 再核对 → `latest=true` |
 | 失败语义 | 任一阶段失败即非零退出，后续阶段不执行；未通过附件核对不得 promote，未通过 promote 后核对不得标记 latest，也不得声称 GA 完成 |
-| 发布责任 | P08 负责 `v3.3.0` Tag、CI 构建、校验和、Release 资产与正式版本标记 |
+| 发布责任 | P08 负责 `v3.4.0` Tag、CI 构建、校验和、Release 资产与正式版本标记 |
 
-本 Manifest 不引用尚未核验的 `v3.3.0` Release URL。正式发布前不得把
+本 Manifest 不引用尚未核验的 `v3.4.0` Release URL。正式发布前不得把
 `release.tag` / `release.url` 填成非空值，也不得把开发 Commit 描述为 GA。
 Source Distribution 内的 `MANIFEST.json` 由 P07 工具生成，其
 `release.tag` / `release.url` 必须保持为空，构建校验会拒绝非空值。
@@ -156,16 +156,16 @@ git diff --check
 
 ```bash
 # Tag / Annotated / Commit / VERSION 守卫
-python3 scripts/release/release.py guard --repo . --tag v3.3.0
+python3 scripts/release/release.py guard --repo . --tag v3.4.0
 
 # 构建全部资产（输出目录必须是独立的顶层未跟踪目录）
-python3 scripts/release/release.py build --repo . --output dist --tag v3.3.0
+python3 scripts/release/release.py build --repo . --output dist --tag v3.4.0
 
 # 资产集合 / SHA256SUMS / Binary / Source Distribution 校验
 python3 scripts/release/release.py verify-assets --dir dist --report dist/reports/local-verification.json
 
 # 两次独立构建比较可复现性
-python3 scripts/release/release.py repro --repo . --tag v3.3.0
+python3 scripts/release/release.py repro --repo . --tag v3.4.0
 ```
 
 安装 / 升级规范与 B/L/N 决策表见 `.agent/specs/WorkflowAdoption.md`。

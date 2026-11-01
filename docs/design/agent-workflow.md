@@ -585,18 +585,19 @@ V3.1 起 `blocked` 还承担**循环熔断停机**（§31）：同一根因的�
 
 Handoff 只携带**最小必要导航和事实**，不复制完整推理过程、不携带大量主观评价、不替下一 Reviewer 做判断。
 
-V3.2.0 起出站字段由 `.agent/specs/WorkflowHandoffContract.md` 统一定义，七个角色一致：
+V3.4.0 起出站字段由 `.agent/specs/WorkflowHandoffContract.md` 统一定义，七个角色一致：
 
 ```text
-RESULT / CURRENT_ROLE / NEXT_ROLE / NEXT_ACTION / NEXT_TARGET / HANDOFF_PROMPT
+RESULT / NEXT_ROLE / TASK_PATH / OWNER_ACTION
 ```
 
-- **Git SHA** 与 **`REMOTE_SYNCED=YES`**（local == `origin/<current-feature>`）是 `NEXT_TARGET` 必须携带的事实，不是可选说明；
-- `NEXT_ROLE` 必须唯一（`NEXT_ROLE=NONE` 是合法停止），`NEXT_ACTION` 以 `HANDOFF` / `FAILURE_HANDOFF` / `OWNER_DECISION` / `SAME_SESSION` / `STOP` 之一开头；
-- 跨角色失败必须附完整可执行 `HANDOFF_PROMPT`；DANGER、BLOCKED 与 Owner 决策等待不得生成下游执行 Prompt；
-- Owner 决策检查点与 OwnerGate V1→V2 是同 Session 推进，不是跨 Session Handoff。
+- 交接是**定位**，不是叙事：它只回答「谁做完了、下一棒是谁、任务在哪里、Owner 是否需要动作」；
+- `NEXT_ROLE` 必须唯一（`NEXT_ROLE=NONE` 是合法停止）；`OWNER_ACTION` 取 `NONE` / `CONTINUE` / `DECIDE:` / `DO:` / `STOP`，分别对应正常交接、同 Session、等待决策、需 Owner 先执行动作与合法停止；
+- 不再产出 `HANDOFF_PROMPT`。AC、SHA、文件清单、实现步骤、Gate 前置条件分别属于 `task.md`、`state.yaml` / Git、Role Prompt 与 Directive §4；
+- 失败原因必须先落 `findings.md` / `owner-decision.md` / `delivery.md` / `loop-ledger.md`，交接块只给接收者与路径；
+- Owner 决策检查点与 OwnerGate V1→V2 是同 Session 推进（`CONTINUE`），不是跨 Session Handoff。
 
-其余（已完成的 Artifact、关键结论、非阻塞风险）只保留决策所需内容。Handoff 给「路线」，Git + Artifacts 给「事实」。Git 提交与 HANDOFF 的完成条件、七角色例外矩阵见 `.agent/specs/WorkflowGitLifecycle.md`。
+Handoff 给「定位」，Task + Git + Gate 给「事实」。Git 提交与 HANDOFF 的完成条件、七角色例外矩阵见 `.agent/specs/WorkflowGitLifecycle.md`；独立 Session 的启动与阶段推导见 `.agent/specs/WorkflowAgentDirective.md` §2.1–§2.4。
 
 ---
 
@@ -1032,3 +1033,41 @@ Owner Integration
 ```
 
 `review.target` 始终指向 C1（`ARCHITECT` 下指向 D1），不前移到审查方自己的 commit。
+
+---
+
+## 34. 独立 Session 协作与轻量化交接（V3.4）
+
+### 34.1 问题
+
+V3.3 已把任务事实写入 Task Artifact，但**启动协议缺失**：规范只定义「何时算被激活」，没有定义「Owner 如何启动下一个角色」。唯一可复制的载荷是 `HANDOFF_PROMPT`，而契约同时要求它写满十项内容（接收 Role、仓库/分支/任务路径、Commit 与证据状态、路线、失败原因、接收者动作、允许修改范围、Gate 与完成条件、不得修改的内容、下一步）。十项中九项已在 `task.md`、`state.yaml`、`contract.md`、Gate 输出与共享规范中存在，只有「失败原因」属于本次会话产生的事实——而它原本没有统一的持久化位置。
+
+于是每次交接都产生一次确定性冗余，并且交接的正确性依赖上一个 Agent 的叙述，而不是仓库事实。
+
+### 34.2 机制
+
+| 机制 | 位置 | 作用 |
+| --- | --- | --- |
+| Session Bootstrap Protocol | `WorkflowAgentDirective.md` §2.1 | 启动串固定为「以 `<ROLE>` 角色执行任务：`.agent/tasks/<slug>/`」；五步动作；开工声明五字段；推导冲突 → `BLOCKED` |
+| Stage Derivation Table | 同上 §2.2 | 由五个 Gate 的入口条件反推「当前该谁做、入口 Gate 是哪个」；唯一不可机器推导的组合（Owner `REJECTED` 的退回对象）显式标注 |
+| `mode` / Finding 推导 | 同上 §2.3 | 从 `state.review` / `state.owner` / `state.delivery` 与 `findings.md` 的 `OPEN` 项推导，不再要求 Owner 输入 |
+| 事实来源表 | 同上 §2.2 | 六类事实的唯一来源；禁止从聊天记录或历史 `HANDOFF_PROMPT` 取事实 |
+| 四字段交接 | `WorkflowHandoffContract.md` §2 | `RESULT` / `NEXT_ROLE` / `TASK_PATH` / `OWNER_ACTION`；`NEXT_ACTION` 的五种语义压缩进 `OWNER_ACTION` |
+| 失败落盘 | 契约 §4、协作规范 §4.1、熔断规范 §6.2 | `findings.md` / `owner-decision.md` / `delivery.md` / `loop-ledger.md`；`loop-ledger.md` 新增 `handoff_target` / `receiver_action`，仍属 Review/Delivery-neutral |
+| 输入所有权矩阵 | 协作规范 §4.1 | 固定「哪个 Artifact 是哪个角色的输入」，补齐 Coder 对 `findings.md` / `owner-decision.md` / `delivery.md` 的读取 |
+
+### 34.3 为什么不需要改 Engine
+
+五个 Gate 只读 `state.yaml` 与 Git，从不读取交接块；`paths.go` 的白名单已包含 `loop-ledger.md`，因此把失败原因写进账本既不会破坏 `CLEAN`，也不会破坏 `Delivery PASS`。阶段推导表是 Gate 语义的逆函数，可由静态测试与真实 Git 测试共同守护，不需要新增 `workflow-check next` 子命令。
+
+V3.4 因此保持：Gate 名称与语义、`state.yaml` schema 3、Tail 白名单、Git 写权限与分支机制不变。
+
+### 34.4 取舍
+
+- **不新增 `handoff.md`**：会牵动 Tail 白名单与 Engine；`loop-ledger.md` 已具备 append-only、write-ahead 与双 neutral 属性。
+- **不新增 `owner.return_to`**：只解决一行推导缺口，收益低于 schema 变更成本；缺失时 `BLOCKED` 是安全默认。
+- **不存在 `UPDATE_COMPLETE → CLEANER`**：`task.md` 不在 Review-neutral 白名单，任何 `task.md` 变更都会使 `CLEAN` 在 `owner-gate-start` 失效，且 `cleaner-start` 要求 `PENDING`。更新后的合法路径只有 Coder 重建 Evidence 或 Analyst 重定 Contract。这一条是源码事实，不是风格选择。
+
+### 34.5 证据边界
+
+规范一致性与真实 Git/Gate 行为分别由 `test_cold_start.py`、`test_handoff_contract.py` 与 `test_git_lifecycle.py` 的 GL-14/15/16 覆盖。它们**不能**证明某个 LLM 在真实会话中一定按推导表行动；真实冷启动验收必须由人工在不同 Session 中执行并记录。

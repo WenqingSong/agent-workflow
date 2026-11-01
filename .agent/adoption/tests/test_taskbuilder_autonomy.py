@@ -165,12 +165,40 @@ class TaskBuilderAutonomyTest(unittest.TestCase):
 
     def test_handoff_matrix_and_exit_table_are_aligned(self) -> None:
         for phrase in (
-            "TASK_BUILDER|HELD_PRESERVED_CHANGES|BOOTSTRAP_HELD|OWNER|STOP|none|NONE|YES",
-            "TASK_BUILDER|BASE_UNRESOLVED|BASE_UNRESOLVED|OWNER|STOP|none|NONE|YES",
+            "TASK_BUILDER|HELD_PRESERVED_CHANGES|BOOTSTRAP_HELD|OWNER|STOP|none|YES",
+            "TASK_BUILDER|BASE_UNRESOLVED|BASE_UNRESOLVED|OWNER|STOP|none|YES",
+            "TASK_BUILDER|UPDATED_IMPLEMENTATION|UPDATE_COMPLETE|CODER|HANDOFF|coder-start|YES",
+            "TASK_BUILDER|UPDATED_ANALYSIS|UPDATE_COMPLETE|ANALYST|HANDOFF|none|YES",
         ):
             self.assertIn(phrase, self.handoff, phrase)
         self.assertIn("BOOTSTRAP_HELD|OWNER|STOP|none", self.prompt)
         self.assertIn("BASE_UNRESOLVED|OWNER|STOP|none", self.prompt)
+        self.assertIn("UPDATE_COMPLETE|CODER|HANDOFF|coder-start", self.prompt)
+        self.assertIn("UPDATE_COMPLETE|ANALYST|HANDOFF|none", self.prompt)
+
+    def test_owner_update_has_terminal_and_clean_invalidation(self) -> None:
+        """owner_update 必须有合法终态，且不得伪造 CLEANER 出口。"""
+        self.assertIn("UPDATE_COMPLETE", self.prompt)
+        self.assertNotIn("UPDATE_COMPLETE|CLEANER", self.prompt)
+        self.assertIn("不存在 `UPDATE_COMPLETE → CLEANER`", self.prompt)
+        for phrase in ("Review-neutral 白名单", "`CLEAN` 在 `owner-gate-start` 失效", "`review.status=PENDING`"):
+            self.assertIn(phrase, self.prompt, phrase)
+        # task.md 不在 Review-neutral 白名单：这是退出路径的机器事实依据。
+        paths = (REPO / ".agent/engine/internal/workflow/paths.go").read_text(encoding="utf-8")
+        review_neutral = paths.split("reviewNeutralBasenames", 1)[1].split("}", 1)[0]
+        self.assertNotIn("task.md", review_neutral, "task.md 进入 Review-neutral 会推翻 CLEAN 失效结论")
+
+    def test_update_input_model_is_minimal(self) -> None:
+        section = self.prompt.split("Owner 修改已有任务：", 1)[1].split("没有 Owner 需求时", 1)[0]
+        for field in ("mode: owner_update", "task_path:", "owner_decision:"):
+            self.assertIn(field, section, field)
+        for forbidden in ("branch:", "base_branch:", "base_sha:", "task_slug:"):
+            self.assertNotIn(forbidden, section, f"更新输入不得要求 {forbidden}")
+
+    def test_taskbuilder_has_circuit_breaker_actions(self) -> None:
+        self.assertIn("### 计数动作（循环熔断）", self.prompt)
+        for phrase in ("loop-ledger.md", "handoff_target", "receiver_action", "DANGER"):
+            self.assertIn(phrase, self.prompt, phrase)
 
     def test_git_lifecycle_wiring(self) -> None:
         for phrase in (
@@ -194,19 +222,20 @@ class TaskBuilderAutonomyTest(unittest.TestCase):
 
     def test_version_and_release_metadata(self) -> None:
         version = text(VERSION).strip()
-        self.assertEqual(version, "3.3.0")
+        self.assertEqual(version, "3.4.0")
         manifest = text(MANIFEST)
-        self.assertIn("Workflow V3.3.0", manifest)
-        self.assertIn("3.3.0", manifest)
+        self.assertIn("Workflow V3.4.0", manifest)
+        self.assertIn("3.4.0", manifest)
         cnb = text(CNB)
-        self.assertIn("v3.3.0:", cnb)
-        self.assertIn("RELEASE_TAG: v3.3.0", cnb)
-        self.assertIn("workflow-check_3.3.0_linux_amd64", cnb)
-        self.assertNotIn("workflow-check_3.2.0_linux_amd64", cnb)
-        self.assertTrue(RELEASE_330.is_file(), "缺少 docs/releases/v3.3.0.md")
-        self.assertIn("V3.3.0", text(RELEASE_330))
+        self.assertIn("v3.4.0:", cnb)
+        self.assertIn("RELEASE_TAG: v3.4.0", cnb)
+        self.assertIn("workflow-check_3.4.0_linux_amd64", cnb)
+        self.assertNotIn("workflow-check_3.3.0_linux_amd64", cnb)
+        release = REPO / "docs/releases/v3.4.0.md"
+        self.assertTrue(release.is_file(), "缺少 docs/releases/v3.4.0.md")
+        self.assertIn("V3.4.0", text(release))
         for readme in (README, AGENT_README):
-            self.assertIn("V3.3", text(readme), str(readme))
+            self.assertIn("V3.4", text(readme), str(readme))
 
     def test_v310_is_marked_historical(self) -> None:
         body = text(RELEASE_310)

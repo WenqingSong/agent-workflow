@@ -2,13 +2,13 @@
 
 `.agent/` 是 Workflow V3 的 Repository Runtime Namespace：集中存放角色 Prompt、协作规范、职责边界、Adoption 协议、模板、机器配置、Registry 与运行时 Task Artifact。Agent 正常执行 Workflow 时，主要读取本目录。
 
-> **Workflow V3 Baseline**（`.agent/VERSION` = `3.3.0`）
+> **Workflow V3 Baseline**（`.agent/VERSION` = `3.4.0`）
 >
 > 当前 Workflow major version = **3**。Baseline 包含：seven-role independent-session workflow（`NORMAL` / `COMPLEX` 六角色 + `ARCHITECT` 的 Architect）、TaskBuilder 自主初始化（自动基线发现 / 自动命名 / 既有修改保护）、三选一路线决策与 `state.yaml.route`、七角色统一出站交接契约、Git Lifecycle 完成条件与只读自检、Evidence Snapshot、machine gates、Generic Shared Resources、strict YAML、two-round loop circuit breaker（DANGER）、independent Workflow Engine module、Adoption mechanism、release engineering（可校验资产与 `workflow-check version`）。
 >
-> Release Status：源码版本 `3.3.0` 由 `v3.3.0` Tag 推送触发发布流水线；发布完成与否以 CNB Release、附件校验与 Git Tag 核验结果为准。
+> Release Status：源码版本 `3.4.0` 由 `v3.4.0` Tag 推送触发发布流水线；发布完成与否以 CNB Release、附件校验与 Git Tag 核验结果为准。
 >
-> V3.3 的主要变化：TaskBuilder 自主初始化（当前分支 / HEAD 为默认基线、自动命名、既有修改保留）、任务依赖模型（Blocking / Reference-only / Parallel）、`git-lifecycle-check baseline` 与 `--preserve-foreign`。Gate、角色数量与 `state.yaml` schema 不变。
+> V3.4 的主要变化：角色可在**全新 Session** 中只凭角色名与 Task 目录开工（Session Bootstrap Protocol、Stage Derivation Table、`mode` / Finding 推导、开工声明）；出站交接收敛为四字段 `RESULT` / `NEXT_ROLE` / `TASK_PATH` / `OWNER_ACTION`，取消强制 `HANDOFF_PROMPT`；失败原因统一落 `loop-ledger.md` 与各角色 Artifact；TaskBuilder 增加 `UPDATE_COMPLETE` 终态与 CLEAN 失效规则。五个 Gate、角色数量与 `state.yaml` schema 不变。
 >
 > Cross-project Adoption Dogfood：**NOT PERFORMED**（DEFERRED BY OWNER）。
 >
@@ -103,7 +103,7 @@ Repository Root 通过 `git rev-parse --show-toplevel` 解析，与 Engine Modul
 - 默认 `resources: {}`，不自动创建 Registry；只有显式 `--resource KIND=PATH` 才创建空表；
 - 升级必须读取上次安装的精确 B 快照；快照缺失为 `BASE_UNKNOWN`，不得用远端 HEAD 代替；
 - 冲突、B 缺失、删除未授权时 fail closed；失败自动回滚并保留报告与备份；
-- 当前 `.agent/VERSION` 为 `3.3.0`；源码版本标记不等于 Release 已发布。`v3.3.0` Tag、Release、校验和与四平台 binary 由仓库根 `scripts/release/` 的发布流程产生，完成与否以 CNB Release 与附件核验为准。
+- 当前 `.agent/VERSION` 为 `3.4.0`；源码版本标记不等于 Release 已发布。`v3.4.0` Tag、Release、校验和与四平台 binary 由仓库根 `scripts/release/` 的发布流程产生，完成与否以 CNB Release 与附件核验为准。
 
 详细规范见 `specs/WorkflowAdoption.md`，工具与平台边界见 `adoption/README.md`，发布契约见根 `PACKAGE_MANIFEST.md`。
 
