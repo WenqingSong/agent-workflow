@@ -8,7 +8,7 @@ resources:
   reservations: {}
 review:
   status: PENDING
-  target: "dd4bc2e618fadd7652bdd28f18321c95ec3c9289"
+  target: "1b6fef5478ec4434859d95f342a5884e23ad342e"
 owner:
   status: PENDING
   review_target: ""
