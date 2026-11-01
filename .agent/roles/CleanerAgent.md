@@ -292,7 +292,7 @@ CLEAN / CHANGES_REQUIRED / BLOCKED
 3. `review.target` 仍指向本轮实际审查的 C1 完整 SHA，不得为了迁就结论改写历史 target；
 4. `git status --short` → 只 stage Cleaner-owned artifacts（`findings.md`、`core-logic.md`、`state.yaml`）→ `git diff --cached` → commit；
 5. 普通 push 当前 feature branch，确认 `git rev-parse HEAD` == `git rev-parse origin/<current-feature>` 且 working tree clean；
-6. 完成后按「出站交接契约」输出 `RESULT=CHANGES_REQUIRED`、`NEXT_ROLE=CODER`、`FAILURE_HANDOFF`，并用十项模板生成可直接执行的修复 Prompt，写明 Finding、Review Target 与下一步动作。
+6. 完成后按「出站交接契约」输出 `RESULT=CHANGES_REQUIRED`、`NEXT_ROLE=CODER`、`FAILURE_HANDOFF`；修复事实全部写入 `findings.md`，并按熔断规范在 `loop-ledger.md` 记账（`handoff_target=CODER`、`receiver_action`），交接块不复述。
 
 退回 Coder 不经过下一角色入口 Gate（Coder 的 Finding 修复模式没有独立 Gate），但必须完成 Push 与远端同步，否则下一次 Session 拿不到真实 Finding。Coder 修复后必须形成新的实现快照（新的 C1）并写入新的 `review.status=PENDING` 与新的 `review.target`；Cleaner 按新靶标重新审查，旧 CLEAN、旧 C1 与旧审查结论一律不得复用。
 
