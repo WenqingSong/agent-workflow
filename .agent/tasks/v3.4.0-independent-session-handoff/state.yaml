@@ -2,8 +2,8 @@ schema_version: 3
 task_id: v3.4.0-independent-session-handoff
 route: COMPLEX
 contract:
-  status: PENDING
-  target: ""
+  status: APPROVED
+  target: "28c9af5e50192d5dd1af3ec744763d59f3781f94"
 resources:
   reservations: {}
 review:
