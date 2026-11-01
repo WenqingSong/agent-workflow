@@ -7,8 +7,8 @@ contract:
 resources:
   reservations: {}
 review:
-  status: CLEAN
-  target: "523fdd2ccf8649f220c2eec9627e1d3b91042c7d"
+  status: PENDING
+  target: "dd4bc2e618fadd7652bdd28f18321c95ec3c9289"
 owner:
   status: PENDING
   review_target: ""
