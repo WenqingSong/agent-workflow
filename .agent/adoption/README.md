@@ -104,7 +104,7 @@
 - `package_only`（根 README、CI、Design）不落宿主；
 - 根 `AGENTS.md` 不创建、不覆盖、不删除；
 - `.agent/workflow.yaml` 在升级中只读；
-- `.agent/tasks/**`、`.agent/registry/**`、业务文件与证据只读；
+- `.agent/tasks/**`、`.agent/registry/**`、业务文件与证据只读；框架仓库自身的 tracked `.agent/tasks/**` 在 V3.4.0 起被排除出分发包而不是使构建失败；
 - 升级冲突、B 快照缺失、删除未授权时整次 fail closed，不做部分写入；
 - 写入前备份到 `.git/workflow-adoption/backups/<txn>/`；
 - 报告写入 `.git/workflow-adoption/reports/<txn>.json`；

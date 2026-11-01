@@ -365,6 +365,21 @@ class DistributionContractTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertEqual(tool_json(proc)["error_code"], "SOURCE_INVALID")
 
+    def test_tracked_task_data_is_excluded_not_rejected(self) -> None:
+        """框架仓库自托管：tracked Task 数据不打包，但不使 dist 失败。"""
+        write(self.source / ".agent/tasks/self/state.yaml", "schema_version: 3\n")
+        write(self.source / ".agent/tasks/self/task.md", "# Task: self\n")
+        commit = commit_all(self.source, "tracked task data")
+        data = dist(self.source, self.tmp / "out_tasks")
+        self.assertEqual(data["source_commit"], commit)
+        with tarfile.open(Path(data["archive"]), "r:gz") as tar:
+            names = tar.getnames()
+        self.assertFalse([n for n in names if "/.agent/tasks/" in n], "Task 数据不得进入分发包")
+        self.assertFalse(
+            [f["path"] for f in data["manifest"]["files"] if f["path"].startswith(".agent/tasks/")],
+            "MANIFEST 不得登记 Task 数据",
+        )
+
     def test_untracked_host_data_is_not_a_reproducible_source(self) -> None:
         write(self.source / ".agent/tasks/secret/state.yaml", "schema_version: 3\n")
         proc = run_tool("dist", "--source", str(self.source), "--output", str(self.tmp / "out3"), "--json")

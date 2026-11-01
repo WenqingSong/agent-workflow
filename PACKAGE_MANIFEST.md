@@ -101,7 +101,8 @@ archive top-level: agent-workflow-src-<commit12>/
 
 - 源仓库必须干净，包括无未跟踪文件；
 - 只接受显式分类的 tracked 文件；出现未分类文件时构建失败；
-- tracked 的宿主数据（workflow.yaml / upstream.yaml / tasks / registry / binary / AGENTS.md）一律使构建失败；
+- tracked 的宿主数据（workflow.yaml / upstream.yaml / registry / binary / AGENTS.md）一律使构建失败；
+- 例外（V3.4.0 / Owner 决策 B）：框架仓库自身的 `.agent/tasks/**` 允许被跟踪，但不进入分发包与 `MANIFEST.json`；宿主项目的 Task 仍不应进入上游源码库；
 - 归档路径安全：拒绝绝对路径、`..` 穿越、符号链接、硬链接、设备 / FIFO；
 - 归档确定性：固定 mtime、uid/gid、uname/gname 与排序。
 

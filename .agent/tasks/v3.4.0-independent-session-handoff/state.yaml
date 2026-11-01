@@ -1,0 +1,23 @@
+schema_version: 3
+task_id: v3.4.0-independent-session-handoff
+route: COMPLEX
+contract:
+  status: APPROVED
+  target: "3d11ded58fa89705b8ebb0ad658acc9121bc0198"
+resources:
+  reservations: {}
+review:
+  status: CLEAN
+  target: "523fdd2ccf8649f220c2eec9627e1d3b91042c7d"
+owner:
+  status: PENDING
+  review_target: ""
+delivery:
+  status: NOT_RUN
+  review_target: ""
+  feature_head: ""
+  develop_base: ""
+blocked:
+  active: false
+  by: ""
+  reason: ""

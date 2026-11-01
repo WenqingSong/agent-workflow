@@ -1068,6 +1068,10 @@ V3.4 因此保持：Gate 名称与语义、`state.yaml` schema 3、Tail 白名�
 - **不新增 `owner.return_to`**：只解决一行推导缺口，收益低于 schema 变更成本；缺失时 `BLOCKED` 是安全默认。
 - **不存在 `UPDATE_COMPLETE → CLEANER`**：`task.md` 不在 Review-neutral 白名单，任何 `task.md` 变更都会使 `CLEAN` 在 `owner-gate-start` 失效，且 `cleaner-start` 要求 `PENDING`。更新后的合法路径只有 Coder 重建 Evidence 或 Analyst 重定 Contract。这一条是源码事实，不是风格选择。
 
-### 34.5 证据边界
+### 34.5 框架仓库自托管（Owner 决策 B）
+
+分发包工具原先对 tracked `.agent/tasks/**` fail-closed，导致框架仓库无法既保存开发期 Task 证据、又产出可分发快照。V3.4.0 起：`.agent/tasks/**` 仍被排除出归档与 `MANIFEST.json`，但不再触发 `SOURCE_INVALID`；`workflow.yaml` / `upstream.yaml` / `registry` / binary / `AGENTS.md` 保持 fail-closed。该规则只影响源包构建，不改变安装、升级与 Gate 语义。
+
+### 34.6 证据边界
 
 规范一致性与真实 Git/Gate 行为分别由 `test_cold_start.py`、`test_handoff_contract.py` 与 `test_git_lifecycle.py` 的 GL-14/15/16 覆盖。它们**不能**证明某个 LLM 在真实会话中一定按推导表行动；真实冷启动验收必须由人工在不同 Session 中执行并记录。
