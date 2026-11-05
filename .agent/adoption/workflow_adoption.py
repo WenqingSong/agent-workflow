@@ -986,9 +986,13 @@ def cmd_install(args) -> int:
         raise AdoptionError("MISSING_ARGUMENT", "缺少 --integration-branch")
 
     plan = plan_install(target, package)
-    print_plan(plan)
+    if not args.json:
+        print_plan(plan)
     if not args.execute:
-        print("DRY-RUN: 未写入任何文件；确认后加 --execute")
+        if not args.json:
+            print("DRY-RUN: 未写入任何文件；确认后加 --execute")
+        else:
+            emit({"status": "DRY_RUN", "plan": plan}, True)
         return 0
 
     result = execute_transaction(target, plan, package, args.integration_branch, args.owner)
@@ -1009,9 +1013,13 @@ def cmd_upgrade(args) -> int:
 
     keep_local = set(args.keep_local or [])
     plan = plan_upgrade(target, package, keep_local)
-    print_plan(plan)
+    if not args.json:
+        print_plan(plan)
     if not args.execute:
-        print("DRY-RUN: 未写入任何文件；确认后加 --execute")
+        if not args.json:
+            print("DRY-RUN: 未写入任何文件；确认后加 --execute")
+        else:
+            emit({"status": "DRY_RUN", "plan": plan}, True)
         return 0
 
     result = execute_transaction(target, plan, package, args.integration_branch, args.owner)
@@ -1128,6 +1136,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
+    except BrokenPipeError:
+        # 输出被 head/less 提前关闭：静默退出，不打印 traceback。
+        return 1
     except AdoptionError as exc:
         payload = {
             "status": "BLOCKED",

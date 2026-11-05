@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -210,6 +212,26 @@ class InstallTests(FrameworkRepoCase):
         self.install()
         self.assertFalse((self.host / "docs").exists())
         self.assertFalse((self.host / ".cnb.yml").exists())
+
+    def test_install_json_output_is_pure_json(self) -> None:
+        package = self.build()
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = wa.main([
+                "install",
+                "--target", str(self.host),
+                "--package", package["archive"],
+                "--distribution-sha256", package["sha256"],
+                "--source-commit", package["commit"],
+                "--integration-branch", "main",
+                "--owner", "owner",
+                "--owner-authorized",
+                "--json",
+            ])
+        self.assertEqual(code, 0)
+        payload = json.loads(buffer.getvalue())
+        self.assertEqual(payload["status"], "DRY_RUN")
+        self.assertEqual(payload["plan"]["action"], "install")
 
     def test_verify_detects_tampering(self) -> None:
         self.install()
