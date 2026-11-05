@@ -50,6 +50,9 @@ type File struct {
 	seq     int64
 	records []Record
 	broken  error
+
+	// afterWrite 仅供测试注入故障，生产路径为 nil。
+	afterWrite func() error
 }
 
 // Open 打开或创建日志文件，并加载全部完整记录。
@@ -87,15 +90,17 @@ func (f *File) load() ([]Warning, error) {
 	}
 
 	type line struct {
-		text   string
-		offset int64
+		text       string
+		offset     int64
+		terminated bool
 	}
 	var lines []line
 	var offset int64
 	for _, raw := range strings.SplitAfter(string(data), "\n") {
+		terminated := strings.HasSuffix(raw, "\n")
 		text := strings.TrimSuffix(raw, "\n")
 		if text != "" {
-			lines = append(lines, line{text: text, offset: offset})
+			lines = append(lines, line{text: text, offset: offset, terminated: terminated})
 		}
 		offset += int64(len(raw))
 	}
@@ -109,9 +114,9 @@ func (f *File) load() ([]Warning, error) {
 	for index, item := range lines {
 		rec, err := decodeLine(item.text)
 		if err != nil {
-			// 只有「缺少校验和 / 校验和长度不足」才可能是撕裂写残留；
-			// 校验和齐全但不匹配、JSON 非法、版本未知都属于真实损坏，必须 fail closed。
-			if errors.Is(err, errIncomplete) && index == len(lines)-1 {
+			// 只有「最后一行且没有以换行结束」才可能是崩溃撕裂写残留；
+			// 已换行终止的行即使损坏，也属于真实损坏，必须 fail closed。
+			if index == len(lines)-1 && !item.terminated {
 				validEnd := item.offset
 				if err := f.file.Truncate(validEnd); err != nil {
 					return nil, fmt.Errorf("journal: truncate torn tail: %w", err)
@@ -132,6 +137,19 @@ func (f *File) load() ([]Warning, error) {
 			return nil, fmt.Errorf("%w: line %d: seq %d, want %d", ErrCorrupt, index+1, rec.Seq, expectedSeq)
 		}
 		f.records = append(f.records, rec)
+		if index == len(lines)-1 && !item.terminated {
+			// 记录完整但缺少终止换行：补齐，避免下一次追加与上一行粘连。
+			if _, err := f.file.Write([]byte("\n")); err != nil {
+				return nil, fmt.Errorf("journal: repair trailing newline: %w", err)
+			}
+			if err := f.file.Sync(); err != nil {
+				return nil, fmt.Errorf("journal: sync after newline repair: %w", err)
+			}
+			warnings = append(warnings, Warning{
+				Line:   index + 1,
+				Reason: "missing trailing newline (repaired)",
+			})
+		}
 		expectedSeq++
 	}
 	f.seq = expectedSeq - 1
@@ -162,11 +180,6 @@ func decodeLine(text string) (Record, error) {
 
 	sum := sha256.Sum256([]byte(payload))
 	if hex.EncodeToString(sum[:]) != digest {
-		// 撕裂写会同时破坏 JSON 结构：payload 不是合法 JSON 时归为「不完整」，
-		// 只有结构完整但校验和不匹配才是真实损坏。
-		if !json.Valid([]byte(payload)) {
-			return rec, fmt.Errorf("%w: payload is not complete json", errIncomplete)
-		}
 		return rec, errors.New("checksum mismatch")
 	}
 	if err := json.Unmarshal([]byte(payload), &rec); err != nil {
@@ -221,6 +234,12 @@ func (f *File) Append(rec Record) (int64, error) {
 	if _, err := f.file.Write(line); err != nil {
 		f.rollback(offset)
 		return 0, fmt.Errorf("journal: write: %w", err)
+	}
+	if f.afterWrite != nil {
+		if err := f.afterWrite(); err != nil {
+			f.rollback(offset)
+			return 0, fmt.Errorf("journal: write failed: %w", err)
+		}
 	}
 	if err := f.file.Sync(); err != nil {
 		f.rollback(offset)

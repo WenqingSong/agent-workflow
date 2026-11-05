@@ -4,6 +4,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -205,7 +206,7 @@ func (h *Handler) listEntries(w http.ResponseWriter, r *http.Request) {
 	if raw := query.Get("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed <= 0 || parsed > ledger.MaxPageSize {
-			h.writeError(w, http.StatusBadRequest, "invalid_query", "limit must be between 1 and 500", nil)
+			h.writeError(w, http.StatusBadRequest, "invalid_query", fmt.Sprintf("limit must be between 1 and %d", ledger.MaxPageSize), nil)
 			return
 		}
 		limit = parsed
@@ -262,11 +263,26 @@ func (h *Handler) notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) methodNotAllowed(allowed ...string) http.HandlerFunc {
-	allow := strings.Join(allowed, ", ")
+	methods := append([]string{}, allowed...)
+	for _, method := range methods {
+		if method == http.MethodGet {
+			methods = append(methods, http.MethodHead)
+			break
+		}
+	}
+	allow := strings.Join(methods, ", ")
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", allow)
 		h.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
 	}
+}
+
+// logger 返回可用的 logger，避免在请求路径上写共享字段。
+func (h *Handler) logger() *slog.Logger {
+	if h.log != nil {
+		return h.log
+	}
+	return slog.Default()
 }
 
 var (
@@ -302,7 +318,7 @@ func (h *Handler) decodeError(w http.ResponseWriter, err error) {
 	var maxErr *http.MaxBytesError
 	switch {
 	case errors.As(err, &maxErr):
-		h.writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "request body exceeds 1 MiB", nil)
+		h.writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", fmt.Sprintf("request body exceeds %d bytes", h.max), nil)
 	case errors.Is(err, errEmptyBody):
 		h.writeError(w, http.StatusBadRequest, "invalid_body", "request body is required", nil)
 	case errors.Is(err, errUnsupportedMediaType):
@@ -330,22 +346,19 @@ func (h *Handler) serviceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ledger.ErrIdempotencyConflict):
 		h.writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key was used with a different payload", nil)
 	default:
-		h.log.Error("internal error", "error", err)
+		h.logger().Error("internal error", "error", err)
 		h.writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", nil)
 	}
 }
 
 func (h *Handler) writeJSON(w http.ResponseWriter, status int, payload any) {
-	if h.log == nil {
-		h.log = slog.Default()
-	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	encoder := json.NewEncoder(w)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(payload); err != nil {
 		// Header 已发出，无法再改状态码；至少留下可观测记录。
-		h.log.Error("encode response failed", "error", err)
+		h.logger().Error("encode response failed", "error", err)
 	}
 }
 

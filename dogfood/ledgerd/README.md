@@ -19,7 +19,7 @@ GOWORK=off go run ./cmd/ledgerd --addr 127.0.0.1:8080 --data ledger.jsonl
 | `GET` | `/accounts/{id}` | 账户与余额 |
 | `GET` | `/accounts/{id}/balance` | 余额 |
 | `POST` | `/accounts/{id}/entries` | 记一笔分录 |
-| `GET` | `/accounts/{id}/entries?limit=&after=` | 分页查询流水 |
+| `GET` | `/accounts/{id}/entries?limit=&after=` | 分页查询流水；`limit` 1..500（默认 50），`after` 为上一页返回的 `next_cursor`；仅当确实存在后续记录时返回 `next_cursor` |
 | `GET` | `/healthz` | 健康检查 |
 
 记分录请求：
@@ -40,6 +40,7 @@ GOWORK=off go run ./cmd/ledgerd --addr 127.0.0.1:8080 --data ledger.jsonl
 | 状态码 | code | 场景 |
 | --- | --- | --- |
 | 400 | `invalid_body` / `invalid_<field>` | JSON 非法、未知字段、参数越界 |
+| 400 | `invalid_query` | `limit` / `after` 不合法 |
 | 404 | `account_not_found` | 账户不存在 |
 | 404 | `not_found` | 未知路径 |
 | 409 | `insufficient_funds` | 余额不足（不写分录） |

@@ -322,14 +322,21 @@ func TestErrorSemantics(t *testing.T) {
 	})
 
 	t.Run("head is supported on get routes", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodHead, env.server.URL+"/healthz", nil)
-		resp, err := env.server.Client().Do(req)
-		if err != nil {
-			t.Fatalf("request: %v", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200 for HEAD /healthz, got %d", resp.StatusCode)
+		for _, path := range []string{
+			"/healthz",
+			"/accounts/" + accountID,
+			"/accounts/" + accountID + "/balance",
+			"/accounts/" + accountID + "/entries",
+		} {
+			req, _ := http.NewRequest(http.MethodHead, env.server.URL+path, nil)
+			resp, err := env.server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("request %s: %v", path, err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("expected 200 for HEAD %s, got %d", path, resp.StatusCode)
+			}
 		}
 	})
 

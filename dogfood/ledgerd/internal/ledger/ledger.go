@@ -29,12 +29,12 @@ const (
 
 // 输入边界。
 const (
-	MaxNameLength          = 100
-	MaxMemoLength          = 200
-	MaxIdempotencyKeyLen   = 128
-	MaxAmountCents   int64 = 100_000_000_000 // 1e11 分
-	DefaultPageSize        = 50
-	MaxPageSize            = 500
+	MaxNameLength              = 100
+	MaxMemoLength              = 200
+	MaxIdempotencyKeyLen       = 128
+	MaxAmountCents       int64 = 100_000_000_000 // 1e11 分
+	DefaultPageSize            = 50
+	MaxPageSize                = 500
 )
 
 // 领域错误。

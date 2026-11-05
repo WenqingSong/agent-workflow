@@ -224,6 +224,111 @@ func TestSingleCorruptLineIsNotCleared(t *testing.T) {
 	}
 }
 
+// TestStructuralCorruptionOnTerminatedLineFailsClosed 覆盖第三轮审查 H1：
+// 已换行终止的行即使 JSON 结构被破坏，也属于真实损坏，不得截断清空。
+func TestStructuralCorruptionOnTerminatedLineFailsClosed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	only := []byte(line(t, 1, "created", map[string]string{"id": "a"}))
+	// 破坏首字符 '{'，使 payload 不再是合法 JSON，但保留换行终止。
+	only[0] = 'z'
+	if err := os.WriteFile(path, only, 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	before, _ := os.ReadFile(path)
+
+	_, _, err := Open(path)
+	if !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("expected ErrCorrupt, got %v", err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("terminated corrupt line must not be truncated")
+	}
+}
+
+// TestMissingTrailingNewlineIsRepaired 覆盖第三轮审查 H2：
+// 记录完整但缺少换行时补齐，避免下一次追加与上一行粘连。
+func TestMissingTrailingNewlineIsRepaired(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	first := line(t, 1, "created", map[string]string{"id": "a"})
+	if err := os.WriteFile(path, []byte(strings.TrimSuffix(first, "\n")), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	file, warnings, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected repair warning, got %v", warnings)
+	}
+	if _, err := file.Append(Record{Type: "created", Data: mustJSON(t, map[string]string{"id": "b"})}); err != nil {
+		t.Fatalf("append after repair: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	reopened, warnings, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v (repair must prevent line concatenation)", err)
+	}
+	defer reopened.Close()
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings after repair: %v", warnings)
+	}
+	records, err := reopened.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(records))
+	}
+}
+
+// TestRollbackKeepsJournalUsable 覆盖第三轮审查 H3：
+// 写入失败但回滚成功时，后续追加仍可用且 seq 不重复。
+func TestRollbackKeepsJournalUsable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	file, _, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := file.Append(Record{Type: "created", Data: mustJSON(t, map[string]string{"id": "a"})}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	file.afterWrite = func() error { return errors.New("injected io failure") }
+	if _, err := file.Append(Record{Type: "created", Data: mustJSON(t, map[string]string{"id": "b"})}); err == nil {
+		t.Fatal("injected failure must surface")
+	}
+	file.afterWrite = nil
+
+	seq, err := file.Append(Record{Type: "created", Data: mustJSON(t, map[string]string{"id": "c"})})
+	if err != nil {
+		t.Fatalf("append after rollback: %v", err)
+	}
+	if seq != 2 {
+		t.Fatalf("seq must not skip or reuse: got %d, want 2", seq)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	reopened, _, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen after rollback: %v", err)
+	}
+	defer reopened.Close()
+	records, err := reopened.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("failed write must be rolled back, got %d records", len(records))
+	}
+}
+
 // TestAppendFailureMarksJournalUnusable 覆盖审查 Finding F2：
 // 写入失败后不得在不确定的文件位置上继续追加。
 func TestAppendFailureMarksJournalUnusable(t *testing.T) {
