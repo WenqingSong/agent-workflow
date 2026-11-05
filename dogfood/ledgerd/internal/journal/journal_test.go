@@ -12,7 +12,7 @@ import (
 
 func line(t *testing.T, seq int64, kind string, data any) string {
 	t.Helper()
-	payload, err := json.Marshal(Record{Seq: seq, Type: kind, Data: mustJSON(t, data)})
+	payload, err := json.Marshal(Record{Version: RecordVersion, Seq: seq, Type: kind, Data: mustJSON(t, data)})
 	if err != nil {
 		t.Fatalf("marshal record: %v", err)
 	}
@@ -141,6 +141,80 @@ func TestMiddleCorruptionFailsClosed(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatal("fail-closed must not modify the journal")
+	}
+}
+
+// TestCompleteLastLineWithBadChecksumFailsClosed 覆盖审查 Finding F1：
+// 末行校验和齐全但不匹配属于真实损坏，不得当作撕裂尾部截断。
+func TestCompleteLastLineWithBadChecksumFailsClosed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	first := line(t, 1, "created", map[string]string{"id": "a"})
+	second := line(t, 2, "created", map[string]string{"id": "b"})
+
+	// 只改 payload 中的一个字节，保留完整 64 位校验和。
+	corrupted := []byte(second)
+	corrupted[6] ^= 0x01
+
+	content := first + string(corrupted)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	before, _ := os.ReadFile(path)
+
+	_, _, err := Open(path)
+	if !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("expected ErrCorrupt, got %v", err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("corrupt complete line must not be truncated")
+	}
+}
+
+// TestSingleCorruptLineIsNotCleared 覆盖审查 Finding F1：
+// 单行账本损坏时不得把文件截断为 0 字节。
+func TestSingleCorruptLineIsNotCleared(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	only := []byte(line(t, 1, "created", map[string]string{"id": "a"}))
+	only[6] ^= 0x01
+	if err := os.WriteFile(path, only, 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	_, _, err := Open(path)
+	if !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("expected ErrCorrupt, got %v", err)
+	}
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		t.Fatalf("stat: %v", statErr)
+	}
+	if info.Size() == 0 {
+		t.Fatal("single corrupt record must not clear the journal")
+	}
+}
+
+// TestAppendFailureMarksJournalUnusable 覆盖审查 Finding F2：
+// 写入失败后不得在不确定的文件位置上继续追加。
+func TestAppendFailureMarksJournalUnusable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	file, _, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := file.Append(Record{Type: "created", Data: mustJSON(t, map[string]string{"id": "a"})}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	// 直接关闭底层句柄，模拟写入时的 I/O 故障。
+	if err := file.file.Close(); err != nil {
+		t.Fatalf("close handle: %v", err)
+	}
+	if _, err := file.Append(Record{Type: "created", Data: mustJSON(t, map[string]string{"id": "b"})}); err == nil {
+		t.Fatal("append on closed file must fail")
+	}
+	if _, err := file.Append(Record{Type: "created", Data: mustJSON(t, map[string]string{"id": "c"})}); err == nil {
+		t.Fatal("journal must stay unusable after a failed write instead of reusing seq")
 	}
 }
 

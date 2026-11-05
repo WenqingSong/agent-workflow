@@ -11,20 +11,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 )
 
-// ErrCorrupt 表示日志中间存在不可恢复的损坏。
+// ErrCorrupt 表示日志存在不可恢复的损坏。
 var ErrCorrupt = errors.New("journal corrupt")
+
+// errIncomplete 表示记录不完整（缺失校验和字段或长度不足），只可能出现在崩溃残留的末行。
+var errIncomplete = errors.New("incomplete record")
+
+// RecordVersion 是当前日志格式版本。未知版本一律 fail closed。
+const RecordVersion = 1
 
 // Record 是一条持久化事件。
 type Record struct {
-	Seq  int64           `json:"seq"`
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data"`
+	Version int             `json:"version"`
+	Seq     int64           `json:"seq"`
+	Type    string          `json:"type"`
+	Data    json.RawMessage `json:"data"`
 }
 
 // Warning 描述加载期的非致命修复（目前只有末行截断）。
@@ -41,6 +49,7 @@ type File struct {
 	file    *os.File
 	seq     int64
 	records []Record
+	broken  error
 }
 
 // Open 打开或创建日志文件，并加载全部完整记录。
@@ -100,8 +109,9 @@ func (f *File) load() ([]Warning, error) {
 	for index, item := range lines {
 		rec, err := decodeLine(item.text)
 		if err != nil {
-			if index == len(lines)-1 {
-				// 崩溃残留：截断到最后一条完整记录。
+			// 只有「缺少校验和 / 校验和长度不足」才可能是撕裂写残留；
+			// 校验和齐全但不匹配、JSON 非法、版本未知都属于真实损坏，必须 fail closed。
+			if errors.Is(err, errIncomplete) && index == len(lines)-1 {
 				validEnd := item.offset
 				if err := f.file.Truncate(validEnd); err != nil {
 					return nil, fmt.Errorf("journal: truncate torn tail: %w", err)
@@ -140,11 +150,15 @@ func (f *File) Load() ([]Record, error) {
 func decodeLine(text string) (Record, error) {
 	var rec Record
 	split := strings.LastIndex(text, " ")
-	if split <= 0 || split >= len(text)-1 {
-		return rec, errors.New("missing checksum")
+	if split <= 0 {
+		return rec, fmt.Errorf("%w: missing checksum separator", errIncomplete)
 	}
 	payload := text[:split]
 	digest := text[split+1:]
+
+	if len(digest) != 64 {
+		return rec, fmt.Errorf("%w: checksum has %d characters", errIncomplete, len(digest))
+	}
 
 	sum := sha256.Sum256([]byte(payload))
 	if hex.EncodeToString(sum[:]) != digest {
@@ -152,6 +166,9 @@ func decodeLine(text string) (Record, error) {
 	}
 	if err := json.Unmarshal([]byte(payload), &rec); err != nil {
 		return rec, fmt.Errorf("invalid json: %w", err)
+	}
+	if rec.Version != RecordVersion {
+		return rec, fmt.Errorf("unsupported record version %d", rec.Version)
 	}
 	if rec.Type == "" {
 		return rec, errors.New("missing record type")
@@ -163,11 +180,28 @@ func decodeLine(text string) (Record, error) {
 }
 
 // Append 写入一条记录并 fsync，返回分配的序号。
+//
+// 写入或 fsync 失败时回滚到写入前偏移，避免半行或「已落盘但未推进 seq」
+// 把一次性 I/O 错误升级为永久的 ErrCorrupt。回滚失败则把 File 置为不可用。
 func (f *File) Append(rec Record) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if f.broken != nil {
+		return 0, f.broken
+	}
+	if f.file == nil {
+		return 0, errors.New("journal: closed")
+	}
+
+	offset, err := f.file.Seek(0, io.SeekEnd)
+	if err != nil {
+		f.broken = fmt.Errorf("journal: seek: %w", err)
+		return 0, f.broken
+	}
+
 	emptyBefore := f.seq == 0
+	rec.Version = RecordVersion
 	rec.Seq = f.seq + 1
 
 	payload, err := json.Marshal(rec)
@@ -180,9 +214,11 @@ func (f *File) Append(rec Record) (int64, error) {
 	line = append(line, '\n')
 
 	if _, err := f.file.Write(line); err != nil {
+		f.rollback(offset)
 		return 0, fmt.Errorf("journal: write: %w", err)
 	}
 	if err := f.file.Sync(); err != nil {
+		f.rollback(offset)
 		return 0, fmt.Errorf("journal: sync: %w", err)
 	}
 	f.seq = rec.Seq
@@ -192,6 +228,19 @@ func (f *File) Append(rec Record) (int64, error) {
 		syncDir(filepath.Dir(f.path))
 	}
 	return rec.Seq, nil
+}
+
+// rollback 把文件恢复到写入前状态；失败则标记 File 不可继续使用。
+func (f *File) rollback(offset int64) {
+	if err := f.file.Truncate(offset); err != nil {
+		f.broken = fmt.Errorf("journal: unusable after failed write: %w", err)
+		return
+	}
+	if _, err := f.file.Seek(offset, io.SeekStart); err != nil {
+		f.broken = fmt.Errorf("journal: unusable after failed write: %w", err)
+		return
+	}
+	_ = f.file.Sync()
 }
 
 // syncDir 尽力确保新建文件的目录项落盘（部分文件系统不支持目录 fsync）。

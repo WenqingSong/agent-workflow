@@ -149,6 +149,7 @@ func TestErrorSemantics(t *testing.T) {
 
 	t.Run("invalid body", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, env.server.URL+"/accounts", strings.NewReader("{"))
+		req.Header.Set("Content-Type", "application/json")
 		resp, err := env.server.Client().Do(req)
 		if err != nil {
 			t.Fatalf("request: %v", err)
@@ -156,6 +157,56 @@ func TestErrorSemantics(t *testing.T) {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("method not allowed", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodDelete, env.server.URL+"/accounts/"+accountID, nil)
+		resp, err := env.server.Client().Do(req)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d", resp.StatusCode)
+		}
+		if allow := resp.Header.Get("Allow"); !strings.Contains(allow, http.MethodGet) {
+			t.Fatalf("Allow header must list GET, got %q", allow)
+		}
+	})
+
+	t.Run("unsupported media type", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, env.server.URL+"/accounts", strings.NewReader(`{"name":"x"}`))
+		req.Header.Set("Content-Type", "text/plain")
+		resp, err := env.server.Client().Do(req)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnsupportedMediaType {
+			t.Fatalf("expected 415, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("empty body", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, env.server.URL+"/accounts", nil)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := env.server.Client().Do(req)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("empty idempotency key", func(t *testing.T) {
+		status, payload := env.request(t, http.MethodPost, "/accounts/"+accountID+"/entries", map[string]any{
+			"kind": "income", "amount_cents": 1,
+		}, map[string]string{"Idempotency-Key": ""})
+		if status != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d %v", status, payload)
 		}
 	})
 
@@ -237,6 +288,7 @@ func TestErrorSemantics(t *testing.T) {
 		big := `{"name":"` + strings.Repeat("a", int(MaxBodyBytes)+1024) + `"}`
 		req, _ := http.NewRequest(http.MethodPost, env.server.URL+"/accounts", strings.NewReader(big))
 		req.Header.Set("Content-Type", "application/json")
+		req.ContentLength = int64(len(big))
 		resp, err := env.server.Client().Do(req)
 		if err != nil {
 			t.Fatalf("request: %v", err)

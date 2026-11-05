@@ -34,14 +34,21 @@ func New(svc *ledger.Service, logger *slog.Logger) *Handler {
 }
 
 // Routes 返回注册好路由的 handler。
+//
+// 已知路径额外注册无方法前缀的兜底，使「路径存在但方法不支持」返回 405 而不是 404。
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /accounts", h.createAccount)
+	mux.HandleFunc("/accounts", h.methodNotAllowed(http.MethodPost))
 	mux.HandleFunc("GET /accounts/{id}", h.getAccount)
+	mux.HandleFunc("/accounts/{id}", h.methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("GET /accounts/{id}/balance", h.getBalance)
+	mux.HandleFunc("/accounts/{id}/balance", h.methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("POST /accounts/{id}/entries", h.postEntry)
 	mux.HandleFunc("GET /accounts/{id}/entries", h.listEntries)
+	mux.HandleFunc("/accounts/{id}/entries", h.methodNotAllowed(http.MethodGet, http.MethodPost))
 	mux.HandleFunc("GET /healthz", h.health)
+	mux.HandleFunc("/healthz", h.methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("/", h.notFound)
 	return mux
 }
@@ -153,12 +160,22 @@ func (h *Handler) postEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 区分「未提供幂等键」与「提供了空键」：后者是非法输入。
+	idempotencyKey := ""
+	if values, present := r.Header["Idempotency-Key"]; present {
+		if len(values) != 1 || strings.TrimSpace(values[0]) == "" {
+			writeError(w, http.StatusBadRequest, "invalid_Idempotency-Key", "Idempotency-Key must be a single non-empty value", nil)
+			return
+		}
+		idempotencyKey = values[0]
+	}
+
 	entry, replayed, err := h.svc.PostEntry(
 		r.PathValue("id"),
 		ledger.Kind(strings.ToLower(req.Kind)),
 		req.AmountCents,
 		req.Memo,
-		r.Header.Get("Idempotency-Key"),
+		idempotencyKey,
 	)
 	if err != nil {
 		h.serviceError(w, err)
@@ -239,7 +256,31 @@ func (h *Handler) notFound(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "not_found", "resource not found", nil)
 }
 
+func (h *Handler) methodNotAllowed(allowed ...string) http.HandlerFunc {
+	allow := strings.Join(allowed, ", ")
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", allow)
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+	}
+}
+
+var (
+	errEmptyBody            = errors.New("empty body")
+	errUnsupportedMediaType = errors.New("unsupported media type")
+)
+
 func (h *Handler) decode(w http.ResponseWriter, r *http.Request, target any) error {
+	if r.ContentLength > h.max {
+		return &http.MaxBytesError{Limit: h.max}
+	}
+	if r.ContentLength == 0 {
+		return errEmptyBody
+	}
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	if !strings.HasPrefix(contentType, "application/json") {
+		return errUnsupportedMediaType
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, h.max)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -254,11 +295,16 @@ func (h *Handler) decode(w http.ResponseWriter, r *http.Request, target any) err
 
 func (h *Handler) decodeError(w http.ResponseWriter, err error) {
 	var maxErr *http.MaxBytesError
-	if errors.As(err, &maxErr) {
+	switch {
+	case errors.As(err, &maxErr):
 		writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "request body exceeds 1 MiB", nil)
-		return
+	case errors.Is(err, errEmptyBody):
+		writeError(w, http.StatusBadRequest, "invalid_body", "request body is required", nil)
+	case errors.Is(err, errUnsupportedMediaType):
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json", nil)
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON or contains unknown fields", nil)
 	}
-	writeError(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON or contains unknown fields", nil)
 }
 
 func (h *Handler) serviceError(w http.ResponseWriter, err error) {
@@ -288,7 +334,10 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.WriteHeader(status)
 	encoder := json.NewEncoder(w)
 	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(payload)
+	if err := encoder.Encode(payload); err != nil {
+		// Header 已发出，无法再改状态码；至少留下可观测记录。
+		slog.Error("encode response failed", "error", err)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string, details map[string]any) {

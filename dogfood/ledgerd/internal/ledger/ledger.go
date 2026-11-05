@@ -260,7 +260,7 @@ func (s *Service) PostEntry(accountID string, kind Kind, amountCents int64, memo
 			Reason: fmt.Sprintf("must be at most %d characters", MaxMemoLength),
 		}
 	}
-	if strings.TrimSpace(idempotencyKey) != idempotencyKey || len(idempotencyKey) > MaxIdempotencyKeyLen {
+	if strings.TrimSpace(idempotencyKey) != idempotencyKey || len([]rune(idempotencyKey)) > MaxIdempotencyKeyLen {
 		return Entry{}, false, &ValidationError{
 			Field:  "Idempotency-Key",
 			Reason: fmt.Sprintf("must be trimmed and at most %d characters", MaxIdempotencyKeyLen),
