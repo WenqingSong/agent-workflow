@@ -31,4 +31,20 @@
 - Files: `dogfood/ledgerd/{cmd,internal}/**`、README.md
 - Next action: 独立审查该 commit；重点检查并发临界区、幂等并发、错误码映射、fsync 顺序与 413 拦截。
 - Open findings: NONE
-- 测试（Lead 实际运行）：`go vet ./...` PASS；`go test ./... -count=1` PASS（4 包，33 个测试）；`go test -race ./... -count=1` PASS。
+- 测试（Lead 实际运行）：`go vet ./...` PASS；`go test ./... -count=1` PASS（4 包，26 个顶层 Test，`go test -v` 共 44 个 RUN）；`go test -race ./... -count=1` PASS。
+
+## 2026-11-05T02:10:00Z CLEANER → LEAD
+
+- Commit: 36957cbb09064169c05d7c36225ef067c7420ff5
+- Result: CHANGES_REQUIRED。1 BLOCKER（F1 末行判定过宽会静默丢记录/清空单行账本）、1 MAJOR（F2 写失败后 seq 复用导致永久损坏）、12 MINOR。审查为只读 Subagent 静态审查：无 shell，未运行 `go`，测试结论维持「未验证」。
+- Files: findings.md（Lead 誊录 F1-F14）
+- Next action: Lead 修复 F1/F2 并处理 MINOR；修复后重新提交并复审。
+- Open findings: F1-F14
+
+## 2026-11-05T02:40:00Z LEAD（Coder）→ CLEANER
+
+- Commit: e64ed0f63a083983bde27d719e2603f378ce0a65
+- Result: F1-F14 全部修复。F1 区分「缺校验和/长度不足」（截断）与「校验和齐全但不匹配/JSON 非法/版本未知」（fail closed）；F2 写入失败回滚偏移并在回滚失败时拒绝后续写入；F5/F6 增加 405 + Allow、强制 JSON、空 body 单独报错；F7 空幂等键 400；F8/F9 新增跨重启幂等与真实 journal 并发测试；F13 记录增加 version；F14 编码失败写日志；F3/F4/F10/F11/F12 修正记录与文档。
+- Files: `internal/journal/**`、`internal/httpapi/**`、`internal/ledger/**`、`cmd/ledgerd/process_test.go`、README.md
+- Next action: 复审 e64ed0f，逐条核对 F1-F14 与回归。
+- Open findings: 无 OPEN（待复审确认）

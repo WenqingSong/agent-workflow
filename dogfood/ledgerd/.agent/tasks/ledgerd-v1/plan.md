@@ -13,15 +13,15 @@ IN_PROGRESS
 | 3 | 结构决策与接口契约 | LEAD | DONE | decisions.md D1-D8 |
 | 4 | 实现领域层、存储层、HTTP 层与命令入口 | CODER | DONE | commit 36957cb |
 | 5 | 单元、集成与并发测试 | CODER | DONE | commit 36957cb（33 个测试） |
-| 6 | 独立审查（不得由作者执行） | CLEANER | IN_PROGRESS | 审查对象 36957cb |
-| 7 | 修复 Finding 并复验 | LEAD | PENDING | — |
-| 8 | 复审至 CLEAN | CLEANER | PENDING | — |
+| 6 | 独立审查（不得由作者执行） | CLEANER | DONE | 36957cb，CHANGES_REQUIRED（1 BLOCKER + 1 MAJOR + 12 MINOR） |
+| 7 | 修复 Finding 并复验 | LEAD | DONE | commit e64ed0f，F1-F14 全部修复 |
+| 8 | 复审至 CLEAN | CLEANER | IN_PROGRESS | 复审对象 e64ed0f |
 | 9 | 冷启动验证（全新 Session 只读任务目录） | CLEANER | PENDING | — |
 | 10 | 交付记录与验收核对 | DELIVERER | PENDING | — |
 
 ## Next Action
 
-CODER 在 `dogfood/ledgerd/` 实现：`internal/journal`（带校验和的 JSONL + fsync + 末行截断）、`internal/ledger`（领域校验、幂等、余额不变量）、`internal/httpapi`（路由与错误语义）、`cmd/ledgerd`（监听、优雅退出），并补齐单元/集成/并发测试。
+CLEANER 复审 `e64ed0f`：逐条验证 F1-F14 是否真的修复，并检查修复是否引入回归（重点：末行判定、写失败回滚、405/415 语义、幂等空键）。
 
 ## Blockers
 
