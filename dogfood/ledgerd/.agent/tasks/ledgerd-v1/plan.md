@@ -2,7 +2,7 @@
 
 ## Current Status
 
-IN_PROGRESS
+DONE
 
 ## Steps
 
@@ -15,13 +15,14 @@ IN_PROGRESS
 | 5 | 单元、集成与并发测试 | CODER | DONE | commit 36957cb；当时计数见 handoff 2026-11-05T01:30Z（26 个顶层 Test / 44 个 RUN），当前树为 33 个顶层 Test |
 | 6 | 独立审查（不得由作者执行） | CLEANER | DONE | 5 轮：36957cb → e64ed0f → bd19c3f → 408e662 → 04b3f54 |
 | 7 | 修复 Finding 并复验 | LEAD | DONE | e64ed0f、bd19c3f、408e662、04b3f54、b4b777e |
-| 8 | 复审至 CLEAN | CLEANER | IN_PROGRESS | 第七轮对象 64981e3 |
-| 9 | 冷启动验证（全新 Session 只读任务目录） | CLEANER | DONE | 首次冷启动发现 42 位 SHA 与记录矛盾，已修复；待终验复跑 |
-| 10 | 交付记录与验收核对 | DELIVERER | PENDING | — |
+| 8 | 复审至 CLEAN | CLEANER | DONE | 第七轮 CLEAN（64981e3）；L2 在 df179cc 修复并克隆验证 |
+| 9 | 冷启动验证（全新 Session 只读任务目录） | CLEANER | DONE | 首次冷启动发现 42 位 SHA 与记录矛盾，已修复并复验 |
+| 10 | 交付记录与验收核对 | DELIVERER | DONE | delivery.md：AC-1..AC-9 全部 PASS，含未验证项 |
 
 ## Next Action
 
-CLEANER 复审 `64981e3`（K1/K2/K3/K4 修复与记录校正），确认是否 CLEAN；随后 DELIVERER 填写交付记录并逐条核对 AC-1..AC-9。
+任务已交付。纳入 `v4.0.0` 正式发布；后续如需变更，必须新建任务记录并重新审查。
+
 
 ## Blockers
 

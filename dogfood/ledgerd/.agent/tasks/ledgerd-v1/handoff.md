@@ -127,4 +127,38 @@
 - Result: K1 修复（非空但无内容行 → `ErrCorrupt`，空文件仍合法；3 条用例）；K3 README 增加启动失败处置与行号；K2/K4 记录更正；I8 改为 OPEN（待 DELIVERER）。
 - Files: journal.go、journal_test.go、README.md、findings.md、plan.md
 - Next action: 第七轮复审 64981e3；CLEAN 后由 DELIVERER 填写 delivery.md。
-- Open findings: 无 OPEN（I8 待 DELIVERER 执行）
+- Open findings: 代码类 Finding 无 OPEN；I8 由 DELIVERER 执行
+
+## 2026-11-05T09:20:00Z CLEANER → LEAD（第七轮）
+
+- Commit: 64981e312e12eae7f05697287109aa1794e39f12
+- Result: CLEAN（0 BLOCKER / 0 MAJOR；2 MINOR + 1 INFO）。K1-K4 全部闭环，四条持久化路径无回归。**前置条件 L2**：`.gitignore` 的 `ledgerd` 规则使 `cmd/ledgerd/` 未被跟踪，必须修复并克隆验证，否则 CLEAN 作废。
+- Files: findings.md
+- Next action: 修复 L2 并做干净克隆验证。
+- Open findings: L1/L6（记录类）
+
+## 2026-11-05T09:50:00Z LEAD（Coder）→ DELIVERER
+
+- Commit: df179cc7da0e5b1a4ff3d996fd02518c5a0c753e
+- Result: L2 修复（`.gitignore` → `/ledgerd`，补入 2 个未跟踪文件）；干净克隆验证：20 个文件、`git ls-files` 10 个 Go 文件、vet/test/-race 全部通过、61 个 RUN。L1/L6/L7 记录更正。
+- Files: `.gitignore`、`cmd/ledgerd/main.go`、`cmd/ledgerd/process_test.go`、findings.md
+- Next action: DELIVERER 逐条核对 AC 并填写 delivery.md。
+- Open findings: 无
+
+## 2026-11-05T10:20:00Z DELIVERER → OWNER
+
+- Commit: df179cc7da0e5b1a4ff3d996fd02518c5a0c753e
+- Result: 交付验证完成。AC-1..AC-9 全部 PASS；手工启动服务验证创建账户/收入/支出/余额/流水/409/413/SIGTERM/重启恢复。未验证项：fsync 物理持久化、审查者未亲自运行测试、跨项目 Adoption、性能基准。
+- Files: delivery.md
+- Next action: Owner 验收；纳入 v4.0.0 发布。
+- Open findings: 无
+- 交接块:
+
+```text
+RESULT: 交付验证完成，AC-1..AC-9 全部 PASS，另有 4 项未验证已如实标注
+NEXT: OWNER
+TASK: dogfood/ledgerd/.agent/tasks/ledgerd-v1/
+ACTION: DONE
+EVIDENCE: delivery.md; commit df179cc
+```
+

@@ -14,14 +14,14 @@
 | 4 | 408e662 | CHANGES_REQUIRED（0 BLOCKER / 2 MAJOR / 6 MINOR） | 只读 Subagent，静态审查，无 shell |
 | 5 | 04b3f54 | CHANGES_REQUIRED（0 BLOCKER / 3 MAJOR / 4 MINOR） | 只读 Subagent，静态审查，无 shell |
 | 6 | b4b777e | CHANGES_REQUIRED（0 BLOCKER / 2 MAJOR / 2 MINOR） | 只读 Subagent，静态审查，无 shell |
-| 7 | 64981e3 | 待复审判定 | 只读 Subagent，静态审查，无 shell |
+| 7 | 64981e3 | CLEAN（0 BLOCKER / 0 MAJOR；2 MINOR + 1 INFO） | 只读 Subagent，静态审查，无 shell |
 
 ## Review Conclusion
 
-- 结论: CHANGES_REQUIRED（第六轮，b4b777e）
+- 结论: CLEAN（第七轮，64981e3）
 - 审查者: CLEANER（只读 Subagent，未参与实现）
-- 时间: 2026-11-05T08:00:00Z
-- 说明: K1 只含空行的文件被当作空账本接受（MAJOR）；K2 findings 仍有两处声称 delivery 已写入（MAJOR）。已在 64981e3 修复，等待第七轮复审。
+- 时间: 2026-11-05T09:20:00Z
+- 说明: K1-K4 全部闭环；正常文件、尾部空行、撕裂尾、补换行四条路径无回归。附前置条件 L2（`.gitignore` 使 `cmd/ledgerd/` 未被跟踪），已在交付提交 df179cc 修复，并由干净克隆（20 个文件、vet/test/-race 全通过）机械验证。
 
 ---
 
@@ -319,6 +319,40 @@
 
 ---
 
-## 第七轮
+## 第七轮（对象 64981e3，结论 CLEAN）
 
-待复审。审查对象 `64981e312e12eae7f05697287109aa1794e39f12`。
+### L1 plan.md 的「当前树 33 个顶层 Test」与实际不符
+- Severity: MINOR / Status: FIXED
+- Evidence: 实际为 35 个以 `Test` 开头的函数（含 `TestMain`）、61 个 RUN。
+- Resolution: 记录改为引用实际运行计数（见 delivery.md §3.1）。
+
+### L2 `.gitignore` 的 `ledgerd` 规则使 `cmd/ledgerd/` 从未进入 Git
+- Severity: MINOR（若未跟踪则升级 BLOCKER）/ Status: FIXED
+- Category: 仓库卫生 / 交付完整性
+- Evidence: `git check-ignore -v dogfood/ledgerd/cmd/ledgerd/main.go` 命中 `.gitignore:2:ledgerd`；`git ls-files dogfood/ledgerd/cmd` 为空。
+- Impact: 命令入口与 4 个进程级用例不在提交历史中，新克隆无法构建/运行 AC-4/5/8/9 的验证代码。
+- Resolution: df179cc（规则改为 `/ledgerd`，补入 `main.go` 与 `process_test.go`）；`git ls-files` 现列出 10 个 Go 文件；干净克隆 vet/test/-race 全通过。
+
+### L3 只含空行的文件被当作空账本（K1）
+- Severity: MAJOR / Status: FIXED
+- Resolution: 64981e3，第七轮复核通过。
+
+### L4 findings 声称 delivery.md 已写入（K2）
+- Severity: MAJOR / Status: FIXED
+- Resolution: 64981e3 更正；delivery.md 已由 DELIVERER 填写。
+
+### L5 缺恢复指引（K3）
+- Severity: MINOR / Status: FIXED
+- Resolution: 64981e3。
+
+### L6 G1 首句表述略超前
+- Severity: MINOR / Status: FIXED
+- Resolution: delivery.md 已产出具名输出，G1 现指向 delivery.md §3。
+
+### L7 handoff 结尾措辞自相矛盾
+- Severity: INFO / Status: FIXED
+- Resolution: 改为「代码类 Finding 无 OPEN；I8 由 DELIVERER 执行」。
+
+### L8 记录在对象 commit 之后的 docs 提交中落盘
+- Severity: INFO / Status: ACCEPTED
+- 说明: 审查对象为代码 commit；记录文件在其后的 docs 提交中落盘，属既定惯例。交付记录绑定代码 commit `df179cc`。
