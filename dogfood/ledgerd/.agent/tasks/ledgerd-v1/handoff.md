@@ -23,3 +23,12 @@
 - Files: decisions.md, task.md, plan.md, analysis.md
 - Next action: 在 `dogfood/ledgerd/` 实现 journal / ledger / httpapi / cmd，并写单元、集成、并发、进程级测试。
 - Open findings: NONE
+
+## 2026-11-05T01:30:00Z CODER（Lead 执行）→ CLEANER
+
+- Commit: 36957cbb09064169c05d7c36225ef067c7420ff5
+- Result: 实现完成。`internal/journal` 带 SHA-256 行校验和的 append-only JSONL（写后 fsync、末行截断、中间损坏 fail closed）；`internal/ledger` 整数金额、余额不变量、幂等键跨重启；`internal/httpapi` 路由/错误语义/1 MiB 上限；`cmd/ledgerd` 自报监听地址与 SIGTERM 5s 优雅退出。
+- Files: `dogfood/ledgerd/{cmd,internal}/**`、README.md
+- Next action: 独立审查该 commit；重点检查并发临界区、幂等并发、错误码映射、fsync 顺序与 413 拦截。
+- Open findings: NONE
+- 测试（Lead 实际运行）：`go vet ./...` PASS；`go test ./... -count=1` PASS（4 包，33 个测试）；`go test -race ./... -count=1` PASS。
