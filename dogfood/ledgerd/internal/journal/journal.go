@@ -117,6 +117,10 @@ func (f *File) load() ([]Warning, error) {
 		}
 	}
 	if lastNonEmpty < 0 {
+		// 完全空文件是合法的空账本；只含空行的文件不是。
+		if len(data) > 0 {
+			return nil, fmt.Errorf("%w: line 1: file contains blank lines only", ErrCorrupt)
+		}
 		return nil, nil
 	}
 
@@ -124,7 +128,10 @@ func (f *File) load() ([]Warning, error) {
 	// 会让下一次追加后变成中间空行，必须立即 fail closed。
 	for _, raw := range segments[lastNonEmpty+1:] {
 		if raw != "" {
-			return nil, fmt.Errorf("%w: trailing blank line", ErrCorrupt)
+			return nil, fmt.Errorf(
+				"%w: line %d: trailing blank line",
+				ErrCorrupt, lastNonEmpty+2,
+			)
 		}
 	}
 

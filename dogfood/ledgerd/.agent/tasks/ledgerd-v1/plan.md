@@ -12,7 +12,7 @@ IN_PROGRESS
 | 2 | 需求、约束与风险分析（并行两份） | ANALYST | DONE | analysis.md（两份只读 Subagent） |
 | 3 | 结构决策与接口契约 | LEAD | DONE | decisions.md D1-D8 |
 | 4 | 实现领域层、存储层、HTTP 层与命令入口 | CODER | DONE | commit 36957cb |
-| 5 | 单元、集成与并发测试 | CODER | DONE | commit 36957cb（33 个测试） |
+| 5 | 单元、集成与并发测试 | CODER | DONE | commit 36957cb；当时计数见 handoff 2026-11-05T01:30Z（26 个顶层 Test / 44 个 RUN），当前树为 33 个顶层 Test |
 | 6 | 独立审查（不得由作者执行） | CLEANER | DONE | 5 轮：36957cb → e64ed0f → bd19c3f → 408e662 → 04b3f54 |
 | 7 | 修复 Finding 并复验 | LEAD | DONE | e64ed0f、bd19c3f、408e662、04b3f54、b4b777e |
 | 8 | 复审至 CLEAN | CLEANER | IN_PROGRESS | 第六轮对象 b4b777e |

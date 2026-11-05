@@ -122,7 +122,7 @@ b4b777e7911e47d1f895d921ab8232c177c3e021（第六轮复审对象）
 
 ### G1 数量声明仍不可复核、修复交接无测试证据
 - Severity: MINOR / Status: FIXED
-- Resolution: 记录改为附实际命令输出；本文件与 delivery.md 引用真实运行结果。
+- Resolution: 记录改为引用可复核的运行结果。`delivery.md` 由 DELIVERER 在 plan.md 第 10 步填写（当前：未填写，全部 AC 未验证）。
 
 ### G2 decisions D4 与实现冲突
 - Severity: MINOR / Status: FIXED
@@ -230,7 +230,7 @@ b4b777e7911e47d1f895d921ab8232c177c3e021（第六轮复审对象）
 ### I2 findings 声称 delivery.md 已填写，实际为空
 - Severity: MAJOR / Status: FIXED
 - Category: 记录一致性
-- Resolution: b4b777e（H7 Resolution 改为「由 DELIVERER 在第 10 步填写」；本文件不再声称已填写）。
+- Resolution: b4b777e 更正 H7 一处；G1/I8 两处同类表述在本轮提交更正（见 K2）。
 
 ### I3 单行+无换行+损坏会清空，且行为无测试
 - Severity: MINOR / Status: FIXED
@@ -253,8 +253,8 @@ b4b777e7911e47d1f895d921ab8232c177c3e021（第六轮复审对象）
 - Resolution: 04b3f54（`Warning.Kind`；main 按 Kind 打印不同文案）。
 
 ### I8 记录缺逐字验证输出与测试计数
-- Severity: MINOR / Status: FIXED
-- Resolution: delivery.md §3 写入真实命令与输出（`go vet` / `go test` / `go test -race`）。
+- Severity: MINOR / Status: OPEN（待 DELIVERER 执行）
+- Resolution: 由 DELIVERER 在 delivery.md §3 写入真实命令与输出（`go vet` / `go test` / `go test -race`）；当前尚未填写。
 
 ---
 

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -300,6 +301,27 @@ func TestBlankLineFailsClosed(t *testing.T) {
 	after, _ := os.ReadFile(path)
 	if string(before) != string(after) {
 		t.Fatal("blank line failure must not modify the journal")
+	}
+}
+
+// TestBlankLineOnlyFileFailsClosed 覆盖第六轮审查 K1：
+// 只含换行的文件不是空账本，必须在加载时拒绝。
+func TestBlankLineOnlyFileFailsClosed(t *testing.T) {
+	for _, content := range []string{"\n", "\n\n", "\n\n\n"} {
+		t.Run(fmt.Sprintf("%q", content), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "ledger.jsonl")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatalf("write fixture: %v", err)
+			}
+			before, _ := os.ReadFile(path)
+			if _, _, err := Open(path); !errors.Is(err, ErrCorrupt) {
+				t.Fatalf("expected ErrCorrupt, got %v", err)
+			}
+			after, _ := os.ReadFile(path)
+			if string(before) != string(after) {
+				t.Fatal("blank-only file must not be modified")
+			}
+		})
 	}
 }
 
