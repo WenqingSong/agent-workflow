@@ -303,6 +303,36 @@ func TestErrorSemantics(t *testing.T) {
 		}
 	})
 
+	t.Run("body too large without content length", func(t *testing.T) {
+		// 不声明 Content-Length，走 chunked / 未知长度路径，验证 MaxBytesReader 生效。
+		big := `{"name":"` + strings.Repeat("b", int(MaxBodyBytes)+1024) + `"}`
+		req, _ := http.NewRequest(http.MethodPost, env.server.URL+"/accounts", readerOnly{strings.NewReader(big)})
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := env.server.Client().Do(req)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Fatalf("expected 413, got %d", resp.StatusCode)
+		}
+		if status, _ := env.request(t, http.MethodGet, "/healthz", nil, nil); status != http.StatusOK {
+			t.Fatalf("service must stay healthy after chunked 413, got %d", status)
+		}
+	})
+
+	t.Run("head is supported on get routes", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodHead, env.server.URL+"/healthz", nil)
+		resp, err := env.server.Client().Do(req)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 for HEAD /healthz, got %d", resp.StatusCode)
+		}
+	})
+
 	t.Run("invalid query", func(t *testing.T) {
 		status, payload := env.request(t, http.MethodGet, "/accounts/"+accountID+"/entries?limit=0", nil, nil)
 		if status != http.StatusBadRequest {
@@ -351,4 +381,9 @@ func TestPaginationCursor(t *testing.T) {
 
 func itoa(value int64) string {
 	return strconv.FormatInt(value, 10)
+}
+
+// readerOnly 隐藏底层 Reader 的具体类型，使 http.Client 不设置 Content-Length。
+type readerOnly struct {
+	io.Reader
 }

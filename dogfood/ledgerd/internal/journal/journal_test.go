@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -168,6 +169,35 @@ func TestCompleteLastLineWithBadChecksumFailsClosed(t *testing.T) {
 	after, _ := os.ReadFile(path)
 	if string(before) != string(after) {
 		t.Fatal("corrupt complete line must not be truncated")
+	}
+}
+
+// TestTornTailWithChecksumLengthIsTruncated 覆盖第二轮审查 G4：
+// 撕裂写可能恰好落在 JSON 内部空格之后且尾部长度等于 64，
+// 此时 payload 不是合法 JSON，应仍按「不完整」截断而不是 fail closed。
+func TestTornTailWithChecksumLengthIsTruncated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	valid := line(t, 1, "created", map[string]string{"id": "a"})
+	tornPayload := `{"version":1,"seq":2,"type":"created","data":{"id":"b`
+	torn := tornPayload + " " + strings.Repeat("0", 64)
+	if err := os.WriteFile(path, []byte(valid+torn), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	file, warnings, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer file.Close()
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning, got %v", warnings)
+	}
+	records, err := file.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected one valid record, got %d", len(records))
 	}
 }
 

@@ -82,6 +82,22 @@
 - Rationale: 原 AC 不可机检，会导致「测试通过」无法证明任何事。
 - Impact: task.md 的验收标准。
 
+### D4-rev1 末行截断判定收窄（修订 D4）
+
+- Decision: 只有「缺校验和分隔符」「校验和长度不足 64」「payload 不是合法 JSON」三种情况视为撕裂写残留并截断；校验和齐全但不匹配、JSON 合法但版本未知，一律 fail closed。
+- Decided by: Lead（依据第一轮审查 F1 BLOCKER）
+- Decided at: 2026-11-05T03:20:00Z
+- Rationale: 第一版把「校验和不匹配」也当作撕裂写，导致完整记录被静默删除、单行账本被清空；修订后仍保留崩溃恢复能力（撕裂写必然破坏 JSON 结构）。
+- Impact: `internal/journal/journal.go` 的 `decodeLine` / `load`；README 与 F1 测试。
+
+### D9 分页游标语义
+
+- Decision: 多取一条判断是否存在下一页；只有确实存在后续记录时才返回 `next_cursor`。
+- Decided by: Lead（依据第二轮审查 G12）
+- Decided at: 2026-11-05T03:20:00Z
+- Rationale: 避免「满页但已是最后一页」多一次空请求。
+- Impact: `httpapi.listEntries`、`Service.Entries` 的 limit 上界（允许 `MaxPageSize+1`）。
+
 ## 待决
 
 暂无

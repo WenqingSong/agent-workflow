@@ -162,6 +162,11 @@ func decodeLine(text string) (Record, error) {
 
 	sum := sha256.Sum256([]byte(payload))
 	if hex.EncodeToString(sum[:]) != digest {
+		// 撕裂写会同时破坏 JSON 结构：payload 不是合法 JSON 时归为「不完整」，
+		// 只有结构完整但校验和不匹配才是真实损坏。
+		if !json.Valid([]byte(payload)) {
+			return rec, fmt.Errorf("%w: payload is not complete json", errIncomplete)
+		}
 		return rec, errors.New("checksum mismatch")
 	}
 	if err := json.Unmarshal([]byte(payload), &rec); err != nil {
@@ -240,7 +245,10 @@ func (f *File) rollback(offset int64) {
 		f.broken = fmt.Errorf("journal: unusable after failed write: %w", err)
 		return
 	}
-	_ = f.file.Sync()
+	if err := f.file.Sync(); err != nil {
+		// 截断未落盘时，磁盘上可能仍存在「已返回失败」的记录；拒绝后续写入。
+		f.broken = fmt.Errorf("journal: unusable after failed rollback: %w", err)
+	}
 }
 
 // syncDir 尽力确保新建文件的目录项落盘（部分文件系统不支持目录 fsync）。

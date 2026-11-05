@@ -113,7 +113,7 @@ func (h *Handler) createAccount(w http.ResponseWriter, r *http.Request) {
 		h.serviceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, accountResponse{
+	h.writeJSON(w, http.StatusCreated, accountResponse{
 		ID:           account.ID,
 		Name:         account.Name,
 		BalanceCents: balance,
@@ -132,7 +132,7 @@ func (h *Handler) getAccount(w http.ResponseWriter, r *http.Request) {
 		h.serviceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, accountResponse{
+	h.writeJSON(w, http.StatusOK, accountResponse{
 		ID:           account.ID,
 		Name:         account.Name,
 		BalanceCents: balance,
@@ -147,7 +147,7 @@ func (h *Handler) getBalance(w http.ResponseWriter, r *http.Request) {
 		h.serviceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	h.writeJSON(w, http.StatusOK, map[string]any{
 		"account_id":    accountID,
 		"balance_cents": balance,
 	})
@@ -164,7 +164,7 @@ func (h *Handler) postEntry(w http.ResponseWriter, r *http.Request) {
 	idempotencyKey := ""
 	if values, present := r.Header["Idempotency-Key"]; present {
 		if len(values) != 1 || strings.TrimSpace(values[0]) == "" {
-			writeError(w, http.StatusBadRequest, "invalid_Idempotency-Key", "Idempotency-Key must be a single non-empty value", nil)
+			h.writeError(w, http.StatusBadRequest, "invalid_idempotency_key", "Idempotency-Key must be a single non-empty value", nil)
 			return
 		}
 		idempotencyKey = values[0]
@@ -186,7 +186,7 @@ func (h *Handler) postEntry(w http.ResponseWriter, r *http.Request) {
 	if replayed {
 		status = http.StatusOK
 	}
-	writeJSON(w, status, entryResponse{
+	h.writeJSON(w, status, entryResponse{
 		EntryID:           entry.ID,
 		AccountID:         entry.AccountID,
 		Kind:              string(entry.Kind),
@@ -205,7 +205,7 @@ func (h *Handler) listEntries(w http.ResponseWriter, r *http.Request) {
 	if raw := query.Get("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed <= 0 || parsed > ledger.MaxPageSize {
-			writeError(w, http.StatusBadRequest, "invalid_query", "limit must be between 1 and 500", nil)
+			h.writeError(w, http.StatusBadRequest, "invalid_query", "limit must be between 1 and 500", nil)
 			return
 		}
 		limit = parsed
@@ -215,16 +215,21 @@ func (h *Handler) listEntries(w http.ResponseWriter, r *http.Request) {
 	if raw := query.Get("after"); raw != "" {
 		parsed, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || parsed < 0 {
-			writeError(w, http.StatusBadRequest, "invalid_query", "after must be a non-negative integer", nil)
+			h.writeError(w, http.StatusBadRequest, "invalid_query", "after must be a non-negative integer", nil)
 			return
 		}
 		after = parsed
 	}
 
-	entries, err := h.svc.Entries(r.PathValue("id"), after, limit)
+	// 多取一条以判断是否真的有下一页，避免满页但已是最后一页时仍返回游标。
+	entries, err := h.svc.Entries(r.PathValue("id"), after, limit+1)
 	if err != nil {
 		h.serviceError(w, err)
 		return
+	}
+	hasMore := len(entries) > limit
+	if hasMore {
+		entries = entries[:limit]
 	}
 
 	items := make([]entryResponse, 0, len(entries))
@@ -241,26 +246,26 @@ func (h *Handler) listEntries(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var cursor *int64
-	if len(entries) == limit {
+	if hasMore && len(entries) > 0 {
 		last := entries[len(entries)-1].Seq
 		cursor = &last
 	}
-	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: cursor})
+	h.writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: cursor})
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	h.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) notFound(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotFound, "not_found", "resource not found", nil)
+	h.writeError(w, http.StatusNotFound, "not_found", "resource not found", nil)
 }
 
 func (h *Handler) methodNotAllowed(allowed ...string) http.HandlerFunc {
 	allow := strings.Join(allowed, ", ")
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", allow)
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+		h.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
 	}
 }
 
@@ -297,13 +302,13 @@ func (h *Handler) decodeError(w http.ResponseWriter, err error) {
 	var maxErr *http.MaxBytesError
 	switch {
 	case errors.As(err, &maxErr):
-		writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "request body exceeds 1 MiB", nil)
+		h.writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "request body exceeds 1 MiB", nil)
 	case errors.Is(err, errEmptyBody):
-		writeError(w, http.StatusBadRequest, "invalid_body", "request body is required", nil)
+		h.writeError(w, http.StatusBadRequest, "invalid_body", "request body is required", nil)
 	case errors.Is(err, errUnsupportedMediaType):
-		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json", nil)
+		h.writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json", nil)
 	default:
-		writeError(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON or contains unknown fields", nil)
+		h.writeError(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON or contains unknown fields", nil)
 	}
 }
 
@@ -313,33 +318,37 @@ func (h *Handler) serviceError(w http.ResponseWriter, err error) {
 
 	switch {
 	case errors.As(err, &validation):
-		writeError(w, http.StatusBadRequest, "invalid_"+validation.Field, validation.Reason, nil)
+		code := "invalid_" + strings.ToLower(strings.ReplaceAll(validation.Field, "-", "_"))
+		h.writeError(w, http.StatusBadRequest, code, validation.Reason, nil)
 	case errors.As(err, &insufficient):
-		writeError(w, http.StatusConflict, "insufficient_funds", "account balance is not enough", map[string]any{
+		h.writeError(w, http.StatusConflict, "insufficient_funds", "account balance is not enough", map[string]any{
 			"balance_cents":  insufficient.Balance,
 			"required_cents": insufficient.Required,
 		})
 	case errors.Is(err, ledger.ErrAccountNotFound):
-		writeError(w, http.StatusNotFound, "account_not_found", "account does not exist", nil)
+		h.writeError(w, http.StatusNotFound, "account_not_found", "account does not exist", nil)
 	case errors.Is(err, ledger.ErrIdempotencyConflict):
-		writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key was used with a different payload", nil)
+		h.writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key was used with a different payload", nil)
 	default:
 		h.log.Error("internal error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", nil)
+		h.writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", nil)
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, payload any) {
+func (h *Handler) writeJSON(w http.ResponseWriter, status int, payload any) {
+	if h.log == nil {
+		h.log = slog.Default()
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	encoder := json.NewEncoder(w)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(payload); err != nil {
 		// Header 已发出，无法再改状态码；至少留下可观测记录。
-		slog.Error("encode response failed", "error", err)
+		h.log.Error("encode response failed", "error", err)
 	}
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string, details map[string]any) {
-	writeJSON(w, status, errorBody{Error: apiError{Code: code, Message: message, Details: details}})
+func (h *Handler) writeError(w http.ResponseWriter, status int, code, message string, details map[string]any) {
+	h.writeJSON(w, status, errorBody{Error: apiError{Code: code, Message: message, Details: details}})
 }

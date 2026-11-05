@@ -368,8 +368,9 @@ func (s *Service) Entries(accountID string, after int64, limit int) ([]Entry, er
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
-	if limit > MaxPageSize {
-		limit = MaxPageSize
+	if limit > MaxPageSize+1 {
+		// 允许调用方多取一条用于判断是否存在下一页。
+		limit = MaxPageSize + 1
 	}
 
 	all := s.entries[accountID]

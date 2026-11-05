@@ -30,7 +30,8 @@ GOWORK=off go run ./cmd/ledgerd --addr 127.0.0.1:8080 --data ledger.jsonl
 
 - `kind`：`income` 或 `expense`
 - `amount_cents`：正整数，最小货币单位（分），上限 `1e11`
-- `Idempotency-Key`（请求头，可选）：同键同载荷返回同一分录（HTTP 200，`replayed: true`）；同键不同载荷返回 409
+- `Idempotency-Key`（请求头，可选）：1..128 个字符，不得含首尾空白；同键同载荷返回同一分录（HTTP 200，`replayed: true`）；同键不同载荷返回 409；提供空值返回 400
+- 所有带 body 的请求必须声明 `Content-Type: application/json`（否则 415）
 
 金额一律使用整数分，不使用浮点。
 
@@ -43,7 +44,9 @@ GOWORK=off go run ./cmd/ledgerd --addr 127.0.0.1:8080 --data ledger.jsonl
 | 404 | `not_found` | 未知路径 |
 | 409 | `insufficient_funds` | 余额不足（不写分录） |
 | 409 | `idempotency_conflict` | 同键不同载荷（不写分录） |
+| 405 | `method_not_allowed` | 路径存在但方法不支持（响应含 `Allow`） |
 | 413 | `body_too_large` | 请求体超过 1 MiB |
+| 415 | `unsupported_media_type` | `Content-Type` 不是 `application/json` |
 | 500 | `internal_error` | 持久化或内部错误 |
 
 ## 持久化
@@ -53,6 +56,7 @@ GOWORK=off go run ./cmd/ledgerd --addr 127.0.0.1:8080 --data ledger.jsonl
 - 启动时重放：损坏（JSON 非法、校验和齐全但不匹配、seq 不连续、版本未知）→ fail closed，非 0 退出且不修改文件；
 - 仅当**最后一行缺少校验和或校验和长度不足**（撕裂写的特征）时才截断到最后一条完整记录并打印警告；
 - 威胁模型：行校验和用于发现意外损坏与位翻转，**不防**有写权限的恶意编辑，也不防按行删除尾部记录。
+- 格式版本：当前为 `version: 1`。没有 `version` 字段的早期日志（e64ed0f 之前的开发构建产物）不兼容，会以 `unsupported record version 0` 拒绝启动，需删除或手工迁移。
 
 ## 验证
 
