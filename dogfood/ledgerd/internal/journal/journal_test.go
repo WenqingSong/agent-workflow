@@ -246,6 +246,83 @@ func TestStructuralCorruptionOnTerminatedLineFailsClosed(t *testing.T) {
 	}
 }
 
+// TestChecksumValidButInvalidJSON 覆盖第四轮审查 I5：
+// 校验和正确但 payload 非法 JSON 时，已终止行 fail closed，未终止行按撕裂尾截断。
+func TestChecksumValidButInvalidJSON(t *testing.T) {
+	payload := `{"version":1,"seq":1,"type":"created","data":`
+	sum := sha256.Sum256([]byte(payload))
+	checksum := hex.EncodeToString(sum[:])
+
+	t.Run("terminated", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "ledger.jsonl")
+		content := payload + " " + checksum + "\n"
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+		if _, _, err := Open(path); !errors.Is(err, ErrCorrupt) {
+			t.Fatalf("expected ErrCorrupt, got %v", err)
+		}
+	})
+
+	t.Run("unterminated", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "ledger.jsonl")
+		content := payload + " " + checksum
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+		file, warnings, err := Open(path)
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		defer file.Close()
+		if len(warnings) != 1 || warnings[0].Kind != WarningTornTail {
+			t.Fatalf("expected torn tail warning, got %+v", warnings)
+		}
+		info, _ := os.Stat(path)
+		if info.Size() != 0 {
+			t.Fatalf("torn record must be truncated, size=%d", info.Size())
+		}
+	})
+}
+
+// TestBlankLineFailsClosed 覆盖第四轮审查 I4：中间空行按损坏处理。
+func TestBlankLineFailsClosed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	content := line(t, 1, "created", map[string]string{"id": "a"}) + "\n" +
+		line(t, 2, "created", map[string]string{"id": "b"})
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	if _, _, err := Open(path); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("expected ErrCorrupt for blank line, got %v", err)
+	}
+}
+
+// TestSingleUnterminatedCorruptLineIsTruncated 覆盖第四轮审查 I3：
+// 单行 + 无换行 + 损坏时按撕裂尾截断，行为被测试固化（不是静默丢一个完整记录）。
+func TestSingleUnterminatedCorruptLineIsTruncated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	only := strings.TrimSuffix(line(t, 1, "created", map[string]string{"id": "a"}), "\n")
+	corrupted := []byte(only)
+	corrupted[6] ^= 0x01
+	if err := os.WriteFile(path, corrupted, 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	file, warnings, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer file.Close()
+	if len(warnings) != 1 || warnings[0].Kind != WarningTornTail {
+		t.Fatalf("expected torn tail warning, got %+v", warnings)
+	}
+	info, _ := os.Stat(path)
+	if info.Size() != 0 {
+		t.Fatalf("torn record must be truncated, size=%d", info.Size())
+	}
+}
+
 // TestMissingTrailingNewlineIsRepaired 覆盖第三轮审查 H2：
 // 记录完整但缺少换行时补齐，避免下一次追加与上一行粘连。
 func TestMissingTrailingNewlineIsRepaired(t *testing.T) {

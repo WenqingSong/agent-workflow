@@ -1,8 +1,14 @@
 // Package journal 提供 append-only、带行校验和的 JSONL 事件日志。
 //
-// 每行格式为 "<payload-json> <sha256-hex>\n"。加载时：
-//   - 中间行损坏（JSON 非法、校验和不匹配、seq 不连续）→ 返回 ErrCorrupt，不改文件；
-//   - 最后一行不完整（崩溃残留）→ 截断到最后一个完整行并返回警告记录。
+// 每行格式为 "<payload-json> <sha256-hex>\n"。加载时按「末行是否以换行终止」区分
+// 崩溃残留与真实损坏：
+//   - 已换行终止的行损坏（校验和不匹配、JSON 非法、seq 不连续、版本未知、空行）
+//     → 返回 ErrCorrupt，不修改文件；
+//   - 未终止的末行解码失败 → 视为撕裂写，截断到最后一个完整行并返回 torn_tail 警告；
+//   - 未终止的末行解码成功 → 补写换行并返回 repaired_newline 警告，避免后续追加粘连。
+//
+// 边界：未终止末行中的任何损坏都会被当作撕裂写截断（包括校验和齐全但不匹配），
+// 因此该边界不提供「拒绝启动」保护，只保证不把损坏行当作有效记录。
 package journal
 
 import (
@@ -35,8 +41,15 @@ type Record struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-// Warning 描述加载期的非致命修复（目前只有末行截断）。
+// 告警类型。
+const (
+	WarningTornTail        = "torn_tail"
+	WarningRepairedNewline = "repaired_newline"
+)
+
+// Warning 描述加载期的非致命修复。
 type Warning struct {
+	Kind   string
 	Line   int
 	Reason string
 	Bytes  int64
@@ -93,19 +106,35 @@ func (f *File) load() ([]Warning, error) {
 		text       string
 		offset     int64
 		terminated bool
+		number     int
 	}
+
+	segments := strings.SplitAfter(string(data), "\n")
+	lastNonEmpty := -1
+	for index, raw := range segments {
+		if strings.TrimSuffix(raw, "\n") != "" {
+			lastNonEmpty = index
+		}
+	}
+	if lastNonEmpty < 0 {
+		return nil, nil
+	}
+
 	var lines []line
 	var offset int64
-	for _, raw := range strings.SplitAfter(string(data), "\n") {
-		terminated := strings.HasSuffix(raw, "\n")
+	for index, raw := range segments[:lastNonEmpty+1] {
 		text := strings.TrimSuffix(raw, "\n")
-		if text != "" {
-			lines = append(lines, line{text: text, offset: offset, terminated: terminated})
+		if text == "" {
+			// 中间空行是异常痕迹（正常写入不会产生），一律 fail closed。
+			return nil, fmt.Errorf("%w: line %d: unexpected blank line", ErrCorrupt, index+1)
 		}
+		lines = append(lines, line{
+			text:       text,
+			offset:     offset,
+			terminated: strings.HasSuffix(raw, "\n"),
+			number:     index + 1,
+		})
 		offset += int64(len(raw))
-	}
-	if len(lines) == 0 {
-		return nil, nil
 	}
 
 	var warnings []Warning
@@ -125,16 +154,17 @@ func (f *File) load() ([]Warning, error) {
 					return nil, fmt.Errorf("journal: sync after truncate: %w", err)
 				}
 				warnings = append(warnings, Warning{
-					Line:   index + 1,
+					Kind:   WarningTornTail,
+					Line:   item.number,
 					Reason: err.Error(),
 					Bytes:  int64(len(data)) - validEnd,
 				})
 				break
 			}
-			return nil, fmt.Errorf("%w: line %d: %v", ErrCorrupt, index+1, err)
+			return nil, fmt.Errorf("%w: line %d: %v", ErrCorrupt, item.number, err)
 		}
 		if rec.Seq != expectedSeq {
-			return nil, fmt.Errorf("%w: line %d: seq %d, want %d", ErrCorrupt, index+1, rec.Seq, expectedSeq)
+			return nil, fmt.Errorf("%w: line %d: seq %d, want %d", ErrCorrupt, item.number, rec.Seq, expectedSeq)
 		}
 		f.records = append(f.records, rec)
 		if index == len(lines)-1 && !item.terminated {
@@ -146,7 +176,8 @@ func (f *File) load() ([]Warning, error) {
 				return nil, fmt.Errorf("journal: sync after newline repair: %w", err)
 			}
 			warnings = append(warnings, Warning{
-				Line:   index + 1,
+				Kind:   WarningRepairedNewline,
+				Line:   item.number,
 				Reason: "missing trailing newline (repaired)",
 			})
 		}

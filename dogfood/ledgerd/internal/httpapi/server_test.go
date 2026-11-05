@@ -175,6 +175,21 @@ func TestErrorSemantics(t *testing.T) {
 		}
 	})
 
+	t.Run("head on post route is not allowed", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodHead, env.server.URL+"/accounts", nil)
+		resp, err := env.server.Client().Do(req)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d", resp.StatusCode)
+		}
+		if allow := resp.Header.Get("Allow"); strings.Contains(allow, http.MethodHead) {
+			t.Fatalf("Allow must not list HEAD for POST-only route, got %q", allow)
+		}
+	})
+
 	t.Run("unsupported media type", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, env.server.URL+"/accounts", strings.NewReader(`{"name":"x"}`))
 		req.Header.Set("Content-Type", "text/plain")
