@@ -137,8 +137,19 @@ class DistTests(FrameworkRepoCase):
 
     def test_dist_is_deterministic(self) -> None:
         first = self.build("dist1")
+        # 跨越时间边界：归档中不得含 generated_at 等易变字段。
+        import time as _time
+
+        _time.sleep(1.1)
         second = self.build("dist2")
         self.assertEqual(first["sha256"], second["sha256"])
+
+    def test_manifest_has_no_volatile_fields(self) -> None:
+        result = self.build()
+        package = wa.load_package(Path(result["archive"]))
+        manifest = package["manifest"]
+        self.assertNotIn("generated_at", manifest)
+        self.assertEqual(manifest["release"], {"tag": "", "url": ""})
 
     def test_dist_rejects_dirty_tree(self) -> None:
         (self.fw / ".agent/README.md").write_text("dirty\n", encoding="utf-8")

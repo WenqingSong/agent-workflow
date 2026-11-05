@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import io
 import json
@@ -320,15 +321,15 @@ def build_dist(source: Path, output: Path, expected_commit: str | None = None,
         ],
         "excluded": sorted(EXCLUDED_EXACT) + sorted(EXCLUDED_PREFIXES),
         "release": {"tag": "", "url": ""},
-        "generated_at": utc_now(),
+        # 不写入 generated_at 等易变字段：归档必须可复现。
     }
 
     output.mkdir(parents=True, exist_ok=True)
     top = f"agent-workflow-src-{version}"
     archive_path = output / f"{top}.tar.gz"
 
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz", compresslevel=9) as tar:
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w") as tar:
         def add(name: str, data: bytes, mode: int) -> None:
             info = tarfile.TarInfo(name)
             info.size = len(data)
@@ -346,7 +347,12 @@ def build_dist(source: Path, output: Path, expected_commit: str | None = None,
         for member in members:
             add(f"{top}/{member['path']}", member["data"], int(member["mode"], 8))
 
-    archive_path.write_bytes(buffer.getvalue())
+    # gzip 头默认写入当前时间；固定为 0 才能保证同一 commit 的归档逐字节一致。
+    compressed = io.BytesIO()
+    with gzip.GzipFile(filename="", mode="wb", fileobj=compressed, mtime=0, compresslevel=9) as gz:
+        gz.write(raw.getvalue())
+
+    archive_path.write_bytes(compressed.getvalue())
     digest = sha256_file(archive_path)
     checksum_path = output / f"{archive_path.name}.sha256"
     checksum_path.write_text(f"{digest}  {archive_path.name}\n", encoding="utf-8")

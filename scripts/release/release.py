@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -427,6 +428,9 @@ def cmd_repro(args) -> int:
     results = []
     with tempfile.TemporaryDirectory() as tmp:
         for index in (1, 2):
+            if index == 2:
+                # 跨越时间边界，确保归档不含易变字段（如 generated_at）。
+                time.sleep(1.1)
             out = Path(tmp) / f"build{index}"
             subprocess.run(
                 [
