@@ -1,0 +1,15 @@
+# 构建与发布产物
+dist/
+build/
+*.tar.gz
+*.sha256
+*.whl
+
+# Python
+__pycache__/
+*.pyc
+
+# 本地环境
+.venv/
+.idea/
+.DS_Store
