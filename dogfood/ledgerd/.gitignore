@@ -1,3 +1,4 @@
+# 只忽略项目根目录下的构建产物与数据文件
+/ledgerd
 *.jsonl
-ledgerd
 /dist/
