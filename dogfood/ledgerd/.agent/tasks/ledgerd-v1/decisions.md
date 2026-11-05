@@ -34,7 +34,7 @@
 - Alternatives: 键仅内存有效（重启后重复记账，否决）；同键不同载荷覆盖（数据损坏，否决）。
 - Impact: 日志字段、领域校验、HTTP 状态码。
 
-### D4 日志损坏恢复策略
+### D4 日志损坏恢复策略（已被 D4-rev1 / D4-rev2 取代，以 D4-rev2 为准）
 
 - Decision:
   - 每行带 SHA-256 校验和（`<payload> <sha256>\n`）；
@@ -89,6 +89,15 @@
 - Decided at: 2026-11-05T03:20:00Z
 - Rationale: 第一版把「校验和不匹配」也当作撕裂写，导致完整记录被静默删除、单行账本被清空；修订后仍保留崩溃恢复能力（撕裂写必然破坏 JSON 结构）。
 - Impact: `internal/journal/journal.go` 的 `decodeLine` / `load`；README 与 F1 测试。
+
+### D4-rev2 以行终止符判定撕裂写（撤销 D4-rev1 的 checksum 长度判据）
+
+- Decision: 是否截断只取决于「末行是否以换行终止」；已终止行的任何解码失败（校验和不匹配、JSON 非法、seq 不连续、版本未知）一律 fail closed。未终止的末行解码失败 → 截断；解码成功 → 补换行。
+- Decided by: Lead（依据第三轮审查 H1；D4-rev1 的 `json.Valid` 启发式无法区分「截断前缀」与「完整行被破坏」）
+- Decided at: 2026-11-05T05:10:00Z
+- Rationale: 换行终止符是「这条记录是否写完」的唯一可靠信号；JSON 结构不是。
+- 接受的风险: 未终止末行中的任何损坏都被视作撕裂写而被截断（可能丢掉最后一条已确认记录）；该风险已在 README「持久化」段与包注释中写明，并有测试固化。
+- Impact: 撤销 D4-rev1 的 checksum 长度判据；`journal.load` 记录 `terminated`。
 
 ### D9 分页游标语义
 

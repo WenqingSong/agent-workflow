@@ -2,157 +2,298 @@
 
 ## Review Target
 
-e64ed0f63a083983bde27d719e2603f378ce0a65（第二轮审查对象）
+b4b777e7911e47d1f895d921ab8232c177c3e021（第六轮复审对象）
 
-历史审查对象：
+审查历史：
 
-- 36957cbb09064169c05d7c36225ef067c7420ff5（第一轮，CHANGES_REQUIRED）
+| 轮次 | 对象 | 结论 | 审查方式 |
+| --- | --- | --- | --- |
+| 1 | 36957cb | CHANGES_REQUIRED（1 BLOCKER + 1 MAJOR + 12 MINOR） | 只读 Subagent，静态审查，无 shell |
+| 2 | e64ed0f | CLEAN（0 BLOCKER / 0 MAJOR / 12 MINOR） | 只读 Subagent，静态审查，无 shell |
+| 3 | bd19c3f | CHANGES_REQUIRED（0 BLOCKER / 2 MAJOR / 5 MINOR） | 只读 Subagent，静态审查，无 shell |
+| 4 | 408e662 | CHANGES_REQUIRED（0 BLOCKER / 2 MAJOR / 6 MINOR） | 只读 Subagent，静态审查，无 shell |
+| 5 | 04b3f54 | CHANGES_REQUIRED（0 BLOCKER / 3 MAJOR / 4 MINOR） | 只读 Subagent，静态审查，无 shell |
+| 6 | b4b777e | 待复审判定 | 只读 Subagent，静态审查，无 shell |
 
 ## Review Conclusion
 
-- 结论: CHANGES_REQUIRED（第一轮 36957cb）
-- 审查者: CLEANER（只读 Subagent，未参与实现；静态审查，无 shell）
-- 时间: 2026-11-05T02:10:00Z
-- 说明: 1 BLOCKER（F1）、1 MAJOR（F2）、12 MINOR。全部已在 e64ed0f 修复，等待第二轮复审。
+- 结论: CHANGES_REQUIRED（第五轮，04b3f54）
+- 审查者: CLEANER（只读 Subagent，未参与实现）
+- 时间: 2026-11-05T06:00:00Z
+- 说明: J1 指出尾部多余空行会在下一次追加后变成中间空行、导致永久 `ErrCorrupt`（MAJOR）；J3/J7 指出记录不实与未落盘。已在 b4b777e 修复并补录，等待第六轮复审。
 
-## Findings
+---
+
+## 第一轮（对象 36957cb）
 
 ### F1 末行截断策略过宽：会静默丢弃完整记录，单行账本被清空
 - Severity: BLOCKER
 - Status: FIXED
 - Category: 持久化 / 数据丢失
-- Evidence: `internal/journal/journal.go` 第一轮对所有末行解码错误一律截断；`decodeLine` 未区分「缺校验和」与「校验和不匹配」。
-- Impact: 完整记录被篡改或位翻转时被当作崩溃残留删除；单行账本会被截断为 0 字节，违反「损坏必须 fail closed」。
-- Required fix: 区分 `errIncomplete`（缺分隔符 / 校验和长度不足）与其他损坏；后者一律 `ErrCorrupt`。
-- Review Target: 36957cb
-- Resolution: e64ed0f。新增 `TestCompleteLastLineWithBadChecksumFailsClosed`、`TestSingleCorruptLineIsNotCleared`。
+- Evidence: `journal.go` 对所有末行解码错误一律截断；未区分「缺校验和」与「校验和不匹配」。
+- Impact: 完整记录被篡改或位翻转时被删除；单行账本被截断为 0 字节。
+- Required fix: 区分不完整与真实损坏。
+- Resolution: e64ed0f（后续在 408e662 改为按行终止符判定，见 H1）
 
-### F2 journal.Append 失败后不回滚文件状态：seq 重用使临时 I/O 错误变成永久损坏
+### F2 journal.Append 失败后不回滚文件状态
 - Severity: MAJOR
 - Status: FIXED
 - Category: 持久化 / 错误处理
-- Evidence: 第一轮 `Append` 在 Write/Sync 失败后既不截断也不标记不可用，下一次写入复用 seq。
-- Impact: 半行粘连或 seq 重复导致重放永久 `ErrCorrupt`。
-- Required fix: 写入前记录偏移，失败时 `Truncate + Seek + Sync`；回滚失败置 `broken`，后续写入直接失败。
-- Review Target: 36957cb
-- Resolution: e64ed0f。新增 `TestAppendFailureMarksJournalUnusable`。
+- Evidence: 写失败后不截断、不标记不可用，下次写入复用 seq。
+- Impact: 半行粘连或 seq 重复导致永久 `ErrCorrupt`。
+- Required fix: 写前记录偏移，失败回滚；回滚失败拒绝后续写入。
+- Resolution: e64ed0f；回滚成功路径测试在 408e662（H3）
 
-### F3 kill -9 用例不能证明 fsync，注释与交接结论强于证据
+### F3 kill -9 用例不能证明 fsync
 - Severity: MINOR
 - Status: FIXED
-- Category: 测试有效性 / 记录一致性
-- Evidence: SIGKILL 不清空页缓存，即使不 fsync 测试仍通过。
-- Impact: 可能掩盖 fsync 回归。
-- Required fix: 修正注释与交付措辞，明确该用例只证明跨进程可见与格式自洽。
-- Review Target: 36957cb
-- Resolution: e64ed0f（`process_test.go` 注释与 README「限制」）。
+- Category: 测试有效性
+- Resolution: e64ed0f（注释与 README 降级为「跨进程可见」）
 
 ### F4 单锁覆盖 fsync；SIGTERM 超时退出码未写入记录
 - Severity: MINOR
 - Status: FIXED
-- Category: 并发性能 / 文档
-- Evidence: `service.mu` 覆盖 `store.Append`；`Shutdown` 超时返回 error → 退出码 1。
-- Impact: 读被写阻塞；超时语义与文档不一致。
-- Required fix: 在 README 限制中写明串行 fsync 与超时退出码。
-- Review Target: 36957cb
-- Resolution: e64ed0f（README「限制」）。
+- Category: 文档
+- Resolution: e64ed0f（README「限制」）
 
-### F5 方法不匹配一律 404，永不返回 405 / Allow
+### F5 方法不匹配一律 404
 - Severity: MINOR
 - Status: FIXED
 - Category: HTTP 语义
-- Evidence: `"/"` 兜底拦截了所有方法，绕过 ServeMux 的 405 分支。
-- Impact: 客户端无法区分路径不存在与方法不支持。
-- Required fix: 为已知路径注册无方法前缀的 405 handler，设置 `Allow`。
-- Review Target: 36957cb
-- Resolution: e64ed0f。新增 `methodNotAllowed` 与对应测试。
+- Resolution: e64ed0f（405 + Allow，含 HEAD）
 
-### F6 不校验 Content-Type；空 body 与非法 JSON 共用文案
+### F6 不校验 Content-Type；空 body 文案误导
 - Severity: MINOR
 - Status: FIXED
 - Category: HTTP 语义
-- Evidence: `decode` 无 Content-Type 判断，空 body 返回「not valid JSON」。
-- Impact: 非 JSON 请求被受理；错误文案误导。
-- Required fix: 要求 `application/json`（否则 415）；空 body 单独报 `body is required`。
-- Review Target: 36957cb
-- Resolution: e64ed0f。新增 415 与空 body 测试。
+- Resolution: e64ed0f（415；空 body 单独报错）
 
-### F7 D3 的「空幂等键非法」未实现；键长按字节计
+### F7 空幂等键未拒绝；键长按字节
 - Severity: MINOR
 - Status: FIXED
-- Category: 记录一致性 / 错误语义
-- Evidence: 空 `Idempotency-Key` 被当作无幂等；`len()` 按字节。
-- Impact: 显式空键时重复记账。
-- Required fix: HTTP 层区分头缺失与空值，空值 400；长度按 rune。
-- Review Target: 36957cb
-- Resolution: e64ed0f。新增空键测试。
+- Category: 错误语义
+- Resolution: e64ed0f（空键 400；按 rune；错误码在 bd19c3f 统一）
 
 ### F8 幂等跨重启只在同进程内验证
 - Severity: MINOR
 - Status: FIXED
 - Category: 测试覆盖
-- Evidence: `TestReplayFromFile` 同进程重开文件，进程级测试未覆盖幂等。
-- Impact: 重启路径的幂等重建可能回归而不被发现。
-- Required fix: 新增进程级跨重启幂等测试。
-- Review Target: 36957cb
-- Resolution: e64ed0f。`TestIdempotencySurvivesRestart`。
+- Resolution: e64ed0f（`TestIdempotencySurvivesRestart`）
 
-### F9 并发测试绕开真实 journal；写盘失败只覆盖「写前失败」
+### F9 并发测试绕开真实 journal
 - Severity: MINOR
 - Status: FIXED
 - Category: 测试覆盖
-- Evidence: 并发用例使用 `memStore`，无 fsync 与文件互斥。
-- Impact: 真实落盘路径的并发行为未被覆盖。
-- Required fix: 增加真实 `journal.File` 的并发用例并在重放后校验不变量。
-- Review Target: 36957cb
-- Resolution: e64ed0f。`TestConcurrentPostsWithRealJournal`。
+- Resolution: e64ed0f（`TestConcurrentPostsWithRealJournal`）
 
-### F10 记录中的量化声明无法核实（33 个测试 / 三种超限输入）
+### F10 记录中的量化声明无法核实
 - Severity: MINOR
 - Status: FIXED
 - Category: 记录一致性
-- Evidence: 第一轮统计与记录不符；分析承诺三种超限输入，实际只有一种。
-- Impact: 交付记录包含不可复核断言。
-- Required fix: 改为可复核表述，并补充超限形态。
-- Review Target: 36957cb
-- Resolution: e64ed0f。更正为「26 个顶层 Test 函数 + 子测试，`go test -v` 共 44 个 RUN」；补充「声明超大 Content-Length」形态。
+- Resolution: e64ed0f + 本文件；计划中的数字已按实际运行结果更新
 
 ### F11 plan.md 的 Next Action 陈旧
 - Severity: MINOR
 - Status: FIXED
 - Category: 记录一致性
-- Evidence: 步骤 6 已 IN_PROGRESS，Next Action 仍停在 CODER 实现。
-- Impact: 冷启动者会误判下一步。
-- Required fix: 每步完成后刷新 Next Action。
-- Review Target: 36957cb
-- Resolution: e64ed0f（plan.md 已刷新）。
+- Resolution: 每轮更新；第三轮复发见 H7
 
 ### F12 全量内存索引与 O(n) 分页限制未写全
 - Severity: MINOR
 - Status: FIXED
 - Category: 文档
-- Evidence: README 只写了「日志不压缩」。
-- Impact: 资源边界未声明。
-- Required fix: 写明内存模型与分页复杂度。
-- Review Target: 36957cb
-- Resolution: e64ed0f（README「限制」）。
+- Resolution: e64ed0f（README「限制」）
 
-### F13 无格式版本字段；校验和威胁模型未说明
+### F13 无格式版本字段
 - Severity: MINOR
 - Status: FIXED
 - Category: 持久化 / 前向兼容
-- Evidence: `Record` 只有 seq/type/data；未知字段被静默忽略。
-- Impact: 旧二进制可能静默误读新日志。
-- Required fix: 增加 `version` 字段并拒绝未知版本；文档写清威胁模型。
-- Review Target: 36957cb
-- Resolution: e64ed0f（`RecordVersion=1`，`decodeLine` 校验版本；README 威胁模型）。
+- Resolution: e64ed0f（`version` 字段 + 未知版本拒绝）
 
 ### F14 writeJSON 忽略编码错误
 - Severity: MINOR
 - Status: FIXED
 - Category: 可观测性
-- Evidence: `_ = encoder.Encode(payload)`。
-- Impact: 截断响应无任何记录。
-- Required fix: 记录编码失败。
-- Review Target: 36957cb
-- Resolution: e64ed0f（`slog.Error`）。
+- Resolution: e64ed0f；logger 归属在 408e662 修正（H4）
+
+---
+
+## 第二轮（对象 e64ed0f，结论 CLEAN，12 MINOR）
+
+### G1 数量声明仍不可复核、修复交接无测试证据
+- Severity: MINOR / Status: FIXED
+- Resolution: 记录改为附实际命令输出；本文件与 delivery.md 引用真实运行结果。
+
+### G2 decisions D4 与实现冲突
+- Severity: MINOR / Status: FIXED
+- Resolution: decisions.md 追加 D4-rev1。
+
+### G3 README 未覆盖 405/415 与请求约束
+- Severity: MINOR / Status: FIXED
+- Resolution: README 补齐错误码、Content-Type、幂等键与分页语义。
+
+### G4 撕裂尾判定可能假阳性
+- Severity: MINOR / Status: FIXED
+- Resolution: bd19c3f 引入 JSON 结构启发式；408e662 改为按行终止符判定（更彻底）。
+
+### G5 rollback 忽略 Sync 错误
+- Severity: MINOR / Status: FIXED
+- Resolution: bd19c3f（Sync 失败置 broken）。
+
+### G6 F2 回滚路径无测试
+- Severity: MINOR / Status: FIXED
+- Resolution: 408e662（`TestRollbackKeepsJournalUsable`，注入 afterWrite 失败）。
+
+### G7 413 只覆盖声明长度路径
+- Severity: MINOR / Status: FIXED
+- Resolution: bd19c3f（无 Content-Length 的 chunked 413 用例）。
+
+### G8 编码失败绕过注入 logger
+- Severity: MINOR / Status: FIXED
+- Resolution: bd19c3f 改用注入 logger；408e662 改为只读 `logger()` 兜底（H4）。
+
+### G9 HEAD 未验证
+- Severity: MINOR / Status: FIXED
+- Resolution: 408e662（healthz、accounts、balance、entries 四条 HEAD 用例）。
+
+### G10 旧日志（无 version）无法启动缺少说明
+- Severity: MINOR / Status: FIXED
+- Resolution: bd19c3f（README 说明不兼容）。
+
+### G11 幂等错误码命名不一致
+- Severity: MINOR / Status: FIXED
+- Resolution: bd19c3f（统一为 `invalid_idempotency_key`）。
+
+### G12 满页但末页仍返回游标
+- Severity: MINOR / Status: FIXED
+- Resolution: bd19c3f（多取一条判断 hasMore）。
+
+---
+
+## 第三轮（对象 bd19c3f，结论 CHANGES_REQUIRED）
+
+### H1 结构位翻转仍可清空末行/单行账本
+- Severity: MAJOR
+- Status: FIXED
+- Category: 持久化 / 正确性
+- Evidence: `json.Valid` 反推撕裂写，无法区分「截断前缀」与「完整写入后被破坏」。
+- Impact: 单行账本被截断为 0 字节，违反 fail closed 约束。
+- Required fix: 以「末行是否以换行终止」判定撕裂写。
+- Resolution: 408e662。`load` 记录 `terminated`；未终止末行解码失败才截断；已终止行损坏一律 `ErrCorrupt`。新增 `TestStructuralCorruptionOnTerminatedLineFailsClosed`。
+
+### H2 完整但缺终止换行的末行会导致后续追加粘连
+- Severity: MINOR
+- Status: FIXED
+- Category: 持久化
+- Resolution: 408e662（自动补换行并 Sync；`TestMissingTrailingNewlineIsRepaired`）。
+
+### H3 回滚路径无测试
+- Severity: MINOR
+- Status: FIXED
+- Category: 测试有效性
+- Resolution: 408e662（`afterWrite` 测试钩子 + `TestRollbackKeepsJournalUsable`）。
+
+### H4 writeJSON nil 兜底写共享字段，serviceError 无保护
+- Severity: MINOR
+- Status: FIXED
+- Category: 并发 / 可维护性
+- Resolution: 408e662（只读 `logger()`，两处统一使用）。
+
+### H5 HEAD 仅覆盖 healthz
+- Severity: MINOR
+- Status: FIXED
+- Category: 测试覆盖
+- Resolution: 408e662（四条 GET 路由均测 HEAD）。
+
+### H6 文档与常量不一致
+- Severity: MINOR
+- Status: FIXED
+- Category: 文档
+- Resolution: 408e662（`invalid_query` 入表、分页语义、Allow 含 HEAD、文案引用常量）。
+
+### H7 记录未反映第二/三轮，G1/G6 无主
+- Severity: MAJOR
+- Status: FIXED
+- Category: 记录一致性
+- Resolution: 本文件补录第二/三轮全部条目与结论；`handoff.md` 补齐三轮回交接；`plan.md` 刷新。`delivery.md` 由 DELIVERER 在 plan.md 第 10 步填写（当前状态：待填写）。
+
+---
+
+## 第四轮（对象 408e662，结论 CHANGES_REQUIRED）
+
+### I1 README 与决策记录仍描述旧截断判据
+- Severity: MAJOR / Status: FIXED
+- Category: 文档 / 记录一致性
+- Evidence: README 与 D4 仍写「校验和不匹配即 fail closed」，而代码对未终止末行的任何解码失败都截断。
+- Resolution: 04b3f54（README、包注释按行终止符重写；decisions 追加 D4-rev2 撤销 D4-rev1）。
+
+### I2 findings 声称 delivery.md 已填写，实际为空
+- Severity: MAJOR / Status: FIXED
+- Category: 记录一致性
+- Resolution: b4b777e（H7 Resolution 改为「由 DELIVERER 在第 10 步填写」；本文件不再声称已填写）。
+
+### I3 单行+无换行+损坏会清空，且行为无测试
+- Severity: MINOR / Status: FIXED
+- Resolution: 04b3f54（`TestSingleUnterminatedCorruptLineIsTruncated`；边界写入 README 与 D4-rev2）。
+
+### I4 中间空行被静默忽略；告警行号非物理行号
+- Severity: MINOR / Status: FIXED
+- Resolution: 04b3f54（中间空行 `ErrCorrupt`；`Warning.Line` 用物理行号；新增 `TestBlankLineFailsClosed`）。
+
+### I5 缺少「校验和正确但 JSON 非法」的用例；注释与实际分支不符
+- Severity: MINOR / Status: FIXED
+- Resolution: 04b3f54（`TestChecksumValidButInvalidJSON` 终止/未终止两条；J4 进一步修正撕裂尾用例注释）。
+
+### I6 Allow 未断言 HEAD；README 未说明 HEAD
+- Severity: MINOR / Status: FIXED
+- Resolution: b4b777e（Allow 断言含 HEAD；HEAD /accounts 断言 405 且不含 HEAD；README 增加 HEAD 说明）。
+
+### I7 告警文案不能区分「补换行」与「撕裂尾」
+- Severity: MINOR / Status: FIXED
+- Resolution: 04b3f54（`Warning.Kind`；main 按 Kind 打印不同文案）。
+
+### I8 记录缺逐字验证输出与测试计数
+- Severity: MINOR / Status: FIXED
+- Resolution: delivery.md §3 写入真实命令与输出（`go vet` / `go test` / `go test -race`）。
+
+---
+
+## 第五轮（对象 04b3f54，结论 CHANGES_REQUIRED）
+
+### J1 尾部多余空行被静默接受，下一次追加后永久无法启动
+- Severity: MAJOR / Status: FIXED
+- Category: 持久化 / 正确性
+- Evidence: `load` 用 `lastNonEmpty` 跳过尾部空段，`"L1\n\n"` 可正常打开；追加后变中间空行 → `ErrCorrupt` 且无修复路径。
+- Impact: 一次多余换行即可让账本在下一次写入后永久不可启动。
+- Required fix: 只允许末尾换行产生的一个空段；出现额外空段立即 fail closed。
+- Resolution: b4b777e。`load` 校验尾部空段；新增 `TestTrailingBlankLineFailsClosed`；README 与包注释同步。
+
+### J2 D4 原文未标注被取代
+- Severity: MINOR / Status: FIXED
+- Resolution: b4b777e（D4 标题标注已被 D4-rev1/D4-rev2 取代）。
+
+### J3 findings 仍声称 delivery.md 已填写（I2 未修）
+- Severity: MAJOR / Status: FIXED
+- Resolution: b4b777e（见 I2）。
+
+### J4 撕裂尾用例注释仍按已撤销的长度判据描述
+- Severity: MINOR / Status: FIXED
+- Resolution: b4b777e（注释改为 D4-rev2 的终止符规则）。
+
+### J5 Allow 未断言 HEAD；README 未说明 HEAD（I6 残留）
+- Severity: MINOR / Status: FIXED
+- Resolution: b4b777e。
+
+### J6 修复类告警与空行用例断言偏松
+- Severity: MINOR / Status: FIXED
+- Resolution: b4b777e（补 `WarningRepairedNewline` 与 before/after 字节比对）。
+
+### J7 第四/五轮结论未落盘，冷启动五问不可答
+- Severity: MAJOR / Status: FIXED
+- Resolution: b4b777e（本文件补录两轮结论；handoff 补两轮交接；plan 刷新）。
+
+---
+
+## 第六轮
+
+待复审。审查对象 `b4b777e7911e47d1f895d921ab8232c177c3e021`。

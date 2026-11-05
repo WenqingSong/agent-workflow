@@ -48,3 +48,67 @@
 - Files: `internal/journal/**`、`internal/httpapi/**`、`internal/ledger/**`、`cmd/ledgerd/process_test.go`、README.md
 - Next action: 复审 e64ed0f，逐条核对 F1-F14 与回归。
 - Open findings: 无 OPEN（待复审确认）
+
+## 2026-11-05T03:00:00Z CLEANER → LEAD（第二轮）
+
+- Commit: e64ed0f63a083983bde27d719e2603f378ce0a65
+- Result: CLEAN（0 BLOCKER / 0 MAJOR / 12 MINOR，G1-G12）。F1/F2 代码路径确认修复；指出 G1 记录数字不可复核、G2 decisions 与实现冲突、G4 撕裂尾判定有假阳性、G7 只测一种超限形态等。审查为只读 Subagent 静态审查，未运行 go/git。
+- Files: findings.md（Lead 誊录）
+- Next action: Lead 收敛 MINOR 并补测。
+- Open findings: G1-G12
+
+## 2026-11-05T03:40:00Z LEAD（Coder）→ CLEANER
+
+- Commit: bd19c3f8afa1b9afb9d5dd9d7e623ec63b68fdbc
+- Result: 处理 G2/G3/G4/G5/G7/G8/G9/G10/G11/G12；新增 chunked 413、HEAD、version 兼容说明、错误码统一、分页 hasMore。
+- Files: journal.go、httpapi/server.go、ledger.go、README.md、decisions.md（D4-rev1/D9）
+- Next action: 复审 bd19c3f。
+- Open findings: G1/G6 未闭环
+
+## 2026-11-05T04:00:00Z CLEANER → LEAD（第三轮）
+
+- Commit: bd19c3f8afa1b9afb9d5dd9d7e623ec63b68fdbc
+- Result: CHANGES_REQUIRED（0 BLOCKER / 2 MAJOR / 5 MINOR，H1-H7）。H1：`json.Valid` 反推撕裂写无法区分「截断前缀」与「完整行被破坏」，结构位翻转仍会清空单行账本；H7：G1-G12 未落盘、plan 与 delivery 陈旧。
+- Files: findings.md
+- Next action: 以「末行是否以换行终止」判定撕裂写；补齐记录。
+- Open findings: H1-H7
+
+## 2026-11-05T04:40:00Z LEAD（Coder）→ CLEANER
+
+- Commit: 408e6629af9a0072ce0fb48f8f66f9a3cf47eecb
+- Result: H1 改为按行终止符判定（未终止末行才截断，已终止行损坏一律 fail closed）；H2 自动补换行；H3 增加注入失败的回滚测试；H4 统一只读 logger()；H5 四条 GET 路由 HEAD 用例；H6 文档/常量/Allow 修正；H7 本文件与 findings.md 已补录三轮结论。
+- Files: `internal/journal/**`、`internal/httpapi/**`、README.md、findings.md、plan.md、handoff.md
+- Next action: 第四轮复审 408e662 并执行冷启动验证（只读任务目录回答五问）。
+- Open findings: 无 OPEN（待复审确认）
+
+## 2026-11-05T05:30:00Z CLEANER → LEAD（第四轮）
+
+- Commit: 408e6629af9a0072ce0fb48f8f66f9a3cf47eecb
+- Result: CHANGES_REQUIRED（0 BLOCKER / 2 MAJOR / 6 MINOR，I1-I8）。I1 README/D4 仍写旧判据；I2 findings 声称 delivery 已填写但为空；其余为边界测试与文档缺口。同轮冷启动验证发现记录中的完整 SHA 被写成 42 位，且五问可答但不完整。
+- Files: findings.md
+- Next action: 文档与决策对齐；修正 SHA；补边界测试与交付记录。
+- Open findings: I1-I8
+
+## 2026-11-05T06:20:00Z LEAD（Coder）→ CLEANER
+
+- Commit: 04b3f542f1d427a681370ea2b2881fe39a7d5d39
+- Result: I1/I3/I4/I5/I7 修复；I2/I8 待 DELIVERER；新增校验和正确但 JSON 非法、中间空行、单行无换行截断等用例；SHA 修正为 40 位。
+- Files: `internal/journal/**`、`internal/httpapi/server_test.go`、README.md、decisions.md
+- Next action: 复审 04b3f54。
+- Open findings: I2/I6/I8
+
+## 2026-11-05T07:00:00Z CLEANER → LEAD（第五轮）
+
+- Commit: 04b3f542f1d427a681370ea2b2881fe39a7d5d39
+- Result: CHANGES_REQUIRED（0 BLOCKER / 3 MAJOR / 4 MINOR，J1-J7）。J1：尾部多余空行会在下一次追加后变中间空行，导致永久 `ErrCorrupt`；J3：findings 仍声称 delivery 已填写；J7：第四/五轮结论未落盘。
+- Files: findings.md
+- Next action: 修尾部空行不变量；更正记录；补 Allow HEAD 断言与告警 Kind 断言。
+- Open findings: J1-J7
+
+## 2026-11-05T07:40:00Z LEAD（Coder）→ CLEANER
+
+- Commit: b4b777e7911e47d1f895d921ab8232c177c3e021
+- Result: J1 拒绝尾部多余空行并新增测试；J2 D4 标注被取代；J4 修正撕裂尾注释；J5 Allow/README 补 HEAD；J6 补 Kind 与字节不变断言；J3/J7 记录已补录第四/五轮结论与本轮交接。
+- Files: `internal/journal/**`、`internal/httpapi/server_test.go`、README.md、decisions.md、findings.md、plan.md、handoff.md
+- Next action: 第六轮复审 b4b777e；通过后由 DELIVERER 填写 delivery.md。
+- Open findings: 无 OPEN（待复审确认）
