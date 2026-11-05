@@ -172,9 +172,9 @@ func TestCompleteLastLineWithBadChecksumFailsClosed(t *testing.T) {
 	}
 }
 
-// TestTornTailWithChecksumLengthIsTruncated 覆盖第二轮审查 G4：
-// 撕裂写可能恰好落在 JSON 内部空格之后且尾部长度等于 64，
-// 此时 payload 不是合法 JSON，应仍按「不完整」截断而不是 fail closed。
+// TestTornTailWithChecksumLengthIsTruncated 覆盖 D4-rev2 的核心规则：
+// 未终止末行的任何解码失败都按撕裂尾截断。本例用「长度恰好 64 的假校验和」
+// 构造一个无论如何都无法通过校验和的末行，确认截断而非 fail closed。
 func TestTornTailWithChecksumLengthIsTruncated(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.jsonl")
 	valid := line(t, 1, "created", map[string]string{"id": "a"})
@@ -293,8 +293,31 @@ func TestBlankLineFailsClosed(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
+	before, _ := os.ReadFile(path)
 	if _, _, err := Open(path); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("expected ErrCorrupt for blank line, got %v", err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("blank line failure must not modify the journal")
+	}
+}
+
+// TestTrailingBlankLineFailsClosed 覆盖第五轮审查 J1：
+// 尾部多余空行会让下一次追加后变成中间空行，必须在加载时拒绝。
+func TestTrailingBlankLineFailsClosed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	content := line(t, 1, "created", map[string]string{"id": "a"}) + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	before, _ := os.ReadFile(path)
+	if _, _, err := Open(path); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("expected ErrCorrupt for trailing blank line, got %v", err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("trailing blank line must not modify the journal")
 	}
 }
 
@@ -336,8 +359,8 @@ func TestMissingTrailingNewlineIsRepaired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if len(warnings) != 1 {
-		t.Fatalf("expected repair warning, got %v", warnings)
+	if len(warnings) != 1 || warnings[0].Kind != WarningRepairedNewline {
+		t.Fatalf("expected repaired_newline warning, got %+v", warnings)
 	}
 	if _, err := file.Append(Record{Type: "created", Data: mustJSON(t, map[string]string{"id": "b"})}); err != nil {
 		t.Fatalf("append after repair: %v", err)

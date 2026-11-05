@@ -22,6 +22,8 @@ GOWORK=off go run ./cmd/ledgerd --addr 127.0.0.1:8080 --data ledger.jsonl
 | `GET` | `/accounts/{id}/entries?limit=&after=` | 分页查询流水；`limit` 1..500（默认 50），`after` 为上一页返回的 `next_cursor`；仅当确实存在后续记录时返回 `next_cursor` |
 | `GET` | `/healthz` | 健康检查 |
 
+所有 `GET` 路由同时支持 `HEAD`（只看状态码与头，不返回 body）；方法不匹配时返回 405，`Allow` 头列出允许的方法（GET 路由同时列出 `HEAD`）。
+
 记分录请求：
 
 ```json

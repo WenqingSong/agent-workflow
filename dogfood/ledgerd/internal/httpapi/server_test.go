@@ -172,6 +172,8 @@ func TestErrorSemantics(t *testing.T) {
 		}
 		if allow := resp.Header.Get("Allow"); !strings.Contains(allow, http.MethodGet) {
 			t.Fatalf("Allow header must list GET, got %q", allow)
+		} else if !strings.Contains(allow, http.MethodHead) {
+			t.Fatalf("Allow header must list HEAD for GET routes, got %q", allow)
 		}
 	})
 

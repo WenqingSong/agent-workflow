@@ -120,6 +120,14 @@ func (f *File) load() ([]Warning, error) {
 		return nil, nil
 	}
 
+	// 正常文件只允许由末尾换行产生一个空段；多余的空段意味着存在尾部空行，
+	// 会让下一次追加后变成中间空行，必须立即 fail closed。
+	for _, raw := range segments[lastNonEmpty+1:] {
+		if raw != "" {
+			return nil, fmt.Errorf("%w: trailing blank line", ErrCorrupt)
+		}
+	}
+
 	var lines []line
 	var offset int64
 	for index, raw := range segments[:lastNonEmpty+1] {
