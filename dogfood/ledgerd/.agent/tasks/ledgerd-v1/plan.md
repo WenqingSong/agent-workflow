@@ -15,13 +15,13 @@ IN_PROGRESS
 | 5 | 单元、集成与并发测试 | CODER | DONE | commit 36957cb；当时计数见 handoff 2026-11-05T01:30Z（26 个顶层 Test / 44 个 RUN），当前树为 33 个顶层 Test |
 | 6 | 独立审查（不得由作者执行） | CLEANER | DONE | 5 轮：36957cb → e64ed0f → bd19c3f → 408e662 → 04b3f54 |
 | 7 | 修复 Finding 并复验 | LEAD | DONE | e64ed0f、bd19c3f、408e662、04b3f54、b4b777e |
-| 8 | 复审至 CLEAN | CLEANER | IN_PROGRESS | 第六轮对象 b4b777e |
+| 8 | 复审至 CLEAN | CLEANER | IN_PROGRESS | 第七轮对象 64981e3 |
 | 9 | 冷启动验证（全新 Session 只读任务目录） | CLEANER | DONE | 首次冷启动发现 42 位 SHA 与记录矛盾，已修复；待终验复跑 |
 | 10 | 交付记录与验收核对 | DELIVERER | PENDING | — |
 
 ## Next Action
 
-CLEANER 复审 `b4b777e`（J1/J5/J6 修复与记录补录），确认是否 CLEAN；随后 DELIVERER 填写交付记录并逐条核对 AC-1..AC-9。
+CLEANER 复审 `64981e3`（K1/K2/K3/K4 修复与记录校正），确认是否 CLEAN；随后 DELIVERER 填写交付记录并逐条核对 AC-1..AC-9。
 
 ## Blockers
 

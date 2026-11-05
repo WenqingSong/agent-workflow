@@ -2,7 +2,7 @@
 
 ## Review Target
 
-b4b777e7911e47d1f895d921ab8232c177c3e021（第六轮复审对象）
+64981e312e12eae7f05697287109aa1794e39f12（第七轮复审对象）
 
 审查历史：
 
@@ -13,14 +13,15 @@ b4b777e7911e47d1f895d921ab8232c177c3e021（第六轮复审对象）
 | 3 | bd19c3f | CHANGES_REQUIRED（0 BLOCKER / 2 MAJOR / 5 MINOR） | 只读 Subagent，静态审查，无 shell |
 | 4 | 408e662 | CHANGES_REQUIRED（0 BLOCKER / 2 MAJOR / 6 MINOR） | 只读 Subagent，静态审查，无 shell |
 | 5 | 04b3f54 | CHANGES_REQUIRED（0 BLOCKER / 3 MAJOR / 4 MINOR） | 只读 Subagent，静态审查，无 shell |
-| 6 | b4b777e | 待复审判定 | 只读 Subagent，静态审查，无 shell |
+| 6 | b4b777e | CHANGES_REQUIRED（0 BLOCKER / 2 MAJOR / 2 MINOR） | 只读 Subagent，静态审查，无 shell |
+| 7 | 64981e3 | 待复审判定 | 只读 Subagent，静态审查，无 shell |
 
 ## Review Conclusion
 
-- 结论: CHANGES_REQUIRED（第五轮，04b3f54）
+- 结论: CHANGES_REQUIRED（第六轮，b4b777e）
 - 审查者: CLEANER（只读 Subagent，未参与实现）
-- 时间: 2026-11-05T06:00:00Z
-- 说明: J1 指出尾部多余空行会在下一次追加后变成中间空行、导致永久 `ErrCorrupt`（MAJOR）；J3/J7 指出记录不实与未落盘。已在 b4b777e 修复并补录，等待第六轮复审。
+- 时间: 2026-11-05T08:00:00Z
+- 说明: K1 只含空行的文件被当作空账本接受（MAJOR）；K2 findings 仍有两处声称 delivery 已写入（MAJOR）。已在 64981e3 修复，等待第七轮复审。
 
 ---
 
@@ -294,6 +295,30 @@ b4b777e7911e47d1f895d921ab8232c177c3e021（第六轮复审对象）
 
 ---
 
-## 第六轮
+## 第六轮（对象 b4b777e，结论 CHANGES_REQUIRED）
 
-待复审。审查对象 `b4b777e7911e47d1f895d921ab8232c177c3e021`。
+### K1 只含换行的日志被当作空账本，首次追加后永久损坏
+- Severity: MAJOR / Status: FIXED
+- Category: 持久化 / 正确性
+- Evidence: `lastNonEmpty < 0` 时直接返回空账本；`"\n"` 文件被接受，追加后变中间空行 → 永久 `ErrCorrupt`。
+- Required fix: 数据非空但无内容行时 fail closed。
+- Resolution: 64981e3（`len(data) > 0` 时 `ErrCorrupt`；3 条 `TestBlankLineOnlyFileFailsClosed` 用例）。
+
+### K2 findings 仍有两处声称 delivery.md 已写入真实运行结果
+- Severity: MAJOR / Status: FIXED
+- Category: 记录一致性
+- Resolution: 64981e3（G1/I8 表述更正；I8 状态改为 `OPEN（待 DELIVERER 执行）`）。
+
+### K3 fail closed 缺少恢复指引；尾部空行错误无行号
+- Severity: MINOR / Status: FIXED
+- Resolution: 64981e3（README 增加「启动失败时的处置」；错误带行号）。
+
+### K4 同一 commit 的测试计数在 plan 与 handoff 中矛盾
+- Severity: MINOR / Status: FIXED
+- Resolution: 64981e3（plan.md 引用 handoff 的当时实测，并注明当前树计数）。
+
+---
+
+## 第七轮
+
+待复审。审查对象 `64981e312e12eae7f05697287109aa1794e39f12`。

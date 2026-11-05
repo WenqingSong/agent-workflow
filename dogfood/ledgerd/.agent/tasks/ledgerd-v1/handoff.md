@@ -112,3 +112,19 @@
 - Files: `internal/journal/**`、`internal/httpapi/server_test.go`、README.md、decisions.md、findings.md、plan.md、handoff.md
 - Next action: 第六轮复审 b4b777e；通过后由 DELIVERER 填写 delivery.md。
 - Open findings: 无 OPEN（待复审确认）
+
+## 2026-11-05T08:10:00Z CLEANER → LEAD（第六轮）
+
+- Commit: b4b777e7911e47d1f895d921ab8232c177c3e021
+- Result: CHANGES_REQUIRED（0 BLOCKER / 2 MAJOR / 2 MINOR，K1-K4）。K1：只含空行的文件被当作空账本，首次追加后永久损坏；K2：findings 仍有两处声称 delivery 已写入；K3/K4 为文档与计数缺口。
+- Files: findings.md
+- Next action: 补 `lastNonEmpty<0` 守卫与测试；更正 G1/I8 表述与测试计数。
+- Open findings: K1-K4
+
+## 2026-11-05T08:50:00Z LEAD（Coder）→ CLEANER
+
+- Commit: 64981e312e12eae7f05697287109aa1794e39f12
+- Result: K1 修复（非空但无内容行 → `ErrCorrupt`，空文件仍合法；3 条用例）；K3 README 增加启动失败处置与行号；K2/K4 记录更正；I8 改为 OPEN（待 DELIVERER）。
+- Files: journal.go、journal_test.go、README.md、findings.md、plan.md
+- Next action: 第七轮复审 64981e3；CLEAN 后由 DELIVERER 填写 delivery.md。
+- Open findings: 无 OPEN（I8 待 DELIVERER 执行）
