@@ -13,3 +13,6 @@ __pycache__/
 .venv/
 .idea/
 .DS_Store
+
+# 环境垃圾目录
+.Trash-*/
