@@ -16,412 +16,412 @@
           git --version
           GOWORK=off go -C .agent/engine test ./...
 
-$:
-  vscode: *dev-config
+# $:
+#   vscode: *dev-config
 
-# ---------------------------------------------------------------------------
-# Workflow V3.4.0 发布流水线（tag_push）
-#
-# 正式附件契约（P09 F1 修复后）：
-#   业务资产 7 项：
-#     workflow-check_3.4.0_linux_amd64
-#     workflow-check_3.4.0_linux_arm64
-#     workflow-check_3.4.0_darwin_arm64
-#     workflow-check_3.4.0_windows_amd64.exe
-#     agent-workflow-src-3.4.0.tar.gz
-#     agent-workflow-src-3.4.0.tar.gz.sha256
-#     agent-workflow-release-notes-3.4.0.md
-#   校验元数据 2 项：
-#     SHA256SUMS
-#     version.json
-#   合计 9 项，创建 pre-release 后一次上传全部 9 项。
-#
-#   附件名全部为精确文件名（无 glob）：Source Distribution 采用版本号命名，
-#   Commit 绑定由归档顶层目录、MANIFEST.json、version.json 与二进制注入值承担。
-#
-# 安全模型（失败绝不产生错误的 GA / latest）：
-#   1. 只有 v3.4.0 这个精确 Tag 能触发；不使用 $ 兜底、不使用 v* 通配。
-#   2. Tag 必须是 Annotated Tag，且 .agent/VERSION 与 Tag 一致，Commit 必须可解析。
-#   3. 预期 Commit 优先来自 CNB_COMMIT；缺失时用 Git 对 Tag 的真实解析结果，并在日志中明示。
-#   4. 先建 preRelease=true / latest=false，再上传 9 项附件。
-#   5. 上传前用 snapshot 固定 9 项附件的独立 SHA256；上传后从平台侧重新下载逐项核对。
-#   6. 核对通过才 promote；promote 使用 overlying=true（更新语义，禁止删除重建）。
-#   7. promote 后重新上传 + 重新下载核对 9 项；未通过不得标记 latest。
-#   8. 任一步失败即非零退出，后续阶段不执行；平台侧最多停留在 pre-release。
-#
-# 平台行为不确定项（需在真实独立 RC 仓库验证，本地不得声称已验证）：
-#   - git:release 的 overlying=true 是否保留已有附件；
-#   - attachments 插件 DOWNLOAD 是否接受精确文件名列表（本流程不再使用 glob）。
-# 因此 promote 后重新上传（幂等）并重新下载核对，不依赖“退出码为 0”推断附件存在。
-# ---------------------------------------------------------------------------
-v3.4.0:
-  tag_push:
-    - name: release-v3.4.0
-      runner:
-        cpus: 8
-      docker:
-        image: golang:1.24
-      env:
-        RELEASE_TAG: v3.4.0
-      stages:
-        - name: toolchain-preflight
-          script: |
-            set -euo pipefail
-            go version
-            git --version
-            if ! command -v python3 >/dev/null 2>&1; then
-              apt-get update
-              apt-get install -y --no-install-recommends python3
-            fi
-            python3 --version
-            command -v sha256sum
+# # ---------------------------------------------------------------------------
+# # Workflow V3.4.0 发布流水线（tag_push）
+# #
+# # 正式附件契约（P09 F1 修复后）：
+# #   业务资产 7 项：
+# #     workflow-check_3.4.0_linux_amd64
+# #     workflow-check_3.4.0_linux_arm64
+# #     workflow-check_3.4.0_darwin_arm64
+# #     workflow-check_3.4.0_windows_amd64.exe
+# #     agent-workflow-src-3.4.0.tar.gz
+# #     agent-workflow-src-3.4.0.tar.gz.sha256
+# #     agent-workflow-release-notes-3.4.0.md
+# #   校验元数据 2 项：
+# #     SHA256SUMS
+# #     version.json
+# #   合计 9 项，创建 pre-release 后一次上传全部 9 项。
+# #
+# #   附件名全部为精确文件名（无 glob）：Source Distribution 采用版本号命名，
+# #   Commit 绑定由归档顶层目录、MANIFEST.json、version.json 与二进制注入值承担。
+# #
+# # 安全模型（失败绝不产生错误的 GA / latest）：
+# #   1. 只有 v3.4.0 这个精确 Tag 能触发；不使用 $ 兜底、不使用 v* 通配。
+# #   2. Tag 必须是 Annotated Tag，且 .agent/VERSION 与 Tag 一致，Commit 必须可解析。
+# #   3. 预期 Commit 优先来自 CNB_COMMIT；缺失时用 Git 对 Tag 的真实解析结果，并在日志中明示。
+# #   4. 先建 preRelease=true / latest=false，再上传 9 项附件。
+# #   5. 上传前用 snapshot 固定 9 项附件的独立 SHA256；上传后从平台侧重新下载逐项核对。
+# #   6. 核对通过才 promote；promote 使用 overlying=true（更新语义，禁止删除重建）。
+# #   7. promote 后重新上传 + 重新下载核对 9 项；未通过不得标记 latest。
+# #   8. 任一步失败即非零退出，后续阶段不执行；平台侧最多停留在 pre-release。
+# #
+# # 平台行为不确定项（需在真实独立 RC 仓库验证，本地不得声称已验证）：
+# #   - git:release 的 overlying=true 是否保留已有附件；
+# #   - attachments 插件 DOWNLOAD 是否接受精确文件名列表（本流程不再使用 glob）。
+# # 因此 promote 后重新上传（幂等）并重新下载核对，不依赖“退出码为 0”推断附件存在。
+# # ---------------------------------------------------------------------------
+# v3.4.0:
+#   tag_push:
+#     - name: release-v3.4.0
+#       runner:
+#         cpus: 8
+#       docker:
+#         image: golang:1.24
+#       env:
+#         RELEASE_TAG: v3.4.0
+#       stages:
+#         - name: toolchain-preflight
+#           script: |
+#             set -euo pipefail
+#             go version
+#             git --version
+#             if ! command -v python3 >/dev/null 2>&1; then
+#               apt-get update
+#               apt-get install -y --no-install-recommends python3
+#             fi
+#             python3 --version
+#             command -v sha256sum
 
-        # 预期 Commit 的独立来源：优先实际 CNB_COMMIT，缺失时用 Git 对 Tag 的解析结果。
-        - name: tag-guard
-          script: |
-            set -euo pipefail
-            test "${CNB_BRANCH:-}" = "${RELEASE_TAG}" || {
-              echo "BLOCKED: 触发 Tag '${CNB_BRANCH:-<empty>}' 不是授权版本 '${RELEASE_TAG}'"
-              exit 1
-            }
-            if [ -n "${CNB_COMMIT:-}" ]; then
-              EXPECTED_COMMIT="${CNB_COMMIT}"
-              EXPECTED_SOURCE="CNB_COMMIT"
-            else
-              EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-              EXPECTED_SOURCE="git-tag-resolution"
-              echo "CNB_COMMIT 不可用：改用 Git 对 Tag ${RELEASE_TAG} 的真实解析结果 ${EXPECTED_COMMIT}"
-            fi
-            python3 scripts/release/release.py guard \
-              --repo . \
-              --tag "${RELEASE_TAG}" \
-              --expected-commit "${EXPECTED_COMMIT}" \
-              --expected-commit-source "${EXPECTED_SOURCE}" \
-              --report dist/reports/guard.json \
-              --json
+#         # 预期 Commit 的独立来源：优先实际 CNB_COMMIT，缺失时用 Git 对 Tag 的解析结果。
+#         - name: tag-guard
+#           script: |
+#             set -euo pipefail
+#             test "${CNB_BRANCH:-}" = "${RELEASE_TAG}" || {
+#               echo "BLOCKED: 触发 Tag '${CNB_BRANCH:-<empty>}' 不是授权版本 '${RELEASE_TAG}'"
+#               exit 1
+#             }
+#             if [ -n "${CNB_COMMIT:-}" ]; then
+#               EXPECTED_COMMIT="${CNB_COMMIT}"
+#               EXPECTED_SOURCE="CNB_COMMIT"
+#             else
+#               EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+#               EXPECTED_SOURCE="git-tag-resolution"
+#               echo "CNB_COMMIT 不可用：改用 Git 对 Tag ${RELEASE_TAG} 的真实解析结果 ${EXPECTED_COMMIT}"
+#             fi
+#             python3 scripts/release/release.py guard \
+#               --repo . \
+#               --tag "${RELEASE_TAG}" \
+#               --expected-commit "${EXPECTED_COMMIT}" \
+#               --expected-commit-source "${EXPECTED_SOURCE}" \
+#               --report dist/reports/guard.json \
+#               --json
 
-        # F2：仓库来源必须由实际运行环境决定（正式仓库或独立 RC 测试仓库）。
-        - name: release-context
-          script: |
-            set -euo pipefail
-            python3 scripts/release/release.py repository \
-              --repo . \
-              --tag "${RELEASE_TAG}" \
-              --report dist/reports/release-context.json \
-              --json
+#         # F2：仓库来源必须由实际运行环境决定（正式仓库或独立 RC 测试仓库）。
+#         - name: release-context
+#           script: |
+#             set -euo pipefail
+#             python3 scripts/release/release.py repository \
+#               --repo . \
+#               --tag "${RELEASE_TAG}" \
+#               --report dist/reports/release-context.json \
+#               --json
 
-        - name: engine-verification
-          script: |
-            set -euo pipefail
-            export GOWORK=off
-            go -C .agent/engine test -count=1 ./...
-            go -C .agent/engine vet ./...
-            go -C .agent/engine build ./...
+#         - name: engine-verification
+#           script: |
+#             set -euo pipefail
+#             export GOWORK=off
+#             go -C .agent/engine test -count=1 ./...
+#             go -C .agent/engine vet ./...
+#             go -C .agent/engine build ./...
 
-        - name: adoption-e2e
-          script: |
-            set -euo pipefail
-            python3 .agent/adoption/tests/test_workflow_adoption.py -v
+#         - name: adoption-e2e
+#           script: |
+#             set -euo pipefail
+#             python3 .agent/adoption/tests/test_workflow_adoption.py -v
 
-        - name: build-assets
-          script: |
-            set -euo pipefail
-            python3 scripts/release/release.py build \
-              --repo . \
-              --output dist \
-              --tag "${RELEASE_TAG}" \
-              --json
+#         - name: build-assets
+#           script: |
+#             set -euo pipefail
+#             python3 scripts/release/release.py build \
+#               --repo . \
+#               --output dist \
+#               --tag "${RELEASE_TAG}" \
+#               --json
 
-        - name: verify-assets-local
-          script: |
-            set -euo pipefail
-            if [ -n "${CNB_COMMIT:-}" ]; then
-              EXPECTED_COMMIT="${CNB_COMMIT}"
-            else
-              EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-              echo "CNB_COMMIT 不可用：本地校验绑定 Git 对 Tag ${RELEASE_TAG} 的解析结果 ${EXPECTED_COMMIT}"
-            fi
-            python3 scripts/release/release.py verify-assets \
-              --dir dist \
-              --repo . \
-              --version "${RELEASE_TAG#v}" \
-              --tag "${RELEASE_TAG}" \
-              --commit "${EXPECTED_COMMIT}" \
-              --repository-required \
-              --report dist/reports/local-verification.json \
-              --json
+#         - name: verify-assets-local
+#           script: |
+#             set -euo pipefail
+#             if [ -n "${CNB_COMMIT:-}" ]; then
+#               EXPECTED_COMMIT="${CNB_COMMIT}"
+#             else
+#               EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+#               echo "CNB_COMMIT 不可用：本地校验绑定 Git 对 Tag ${RELEASE_TAG} 的解析结果 ${EXPECTED_COMMIT}"
+#             fi
+#             python3 scripts/release/release.py verify-assets \
+#               --dir dist \
+#               --repo . \
+#               --version "${RELEASE_TAG#v}" \
+#               --tag "${RELEASE_TAG}" \
+#               --commit "${EXPECTED_COMMIT}" \
+#               --repository-required \
+#               --report dist/reports/local-verification.json \
+#               --json
 
-        - name: snapshot-expected-assets
-          script: |
-            set -euo pipefail
-            python3 scripts/release/release.py snapshot \
-              --assets dist \
-              --out dist/expected \
-              --manifest dist/reports/expected-assets.json \
-              --report dist/reports/snapshot.json \
-              --json
+#         - name: snapshot-expected-assets
+#           script: |
+#             set -euo pipefail
+#             python3 scripts/release/release.py snapshot \
+#               --assets dist \
+#               --out dist/expected \
+#               --manifest dist/reports/expected-assets.json \
+#               --report dist/reports/snapshot.json \
+#               --json
 
-        # 静态自检：.cnb.yml 的上传 / 下载 / 复核阶段必须覆盖全部 9 项且无 glob。
-        - name: check-pipeline-coverage
-          script: |
-            set -euo pipefail
-            python3 scripts/release/release.py check-pipeline \
-              --config .cnb.yml \
-              --dir dist \
-              --report dist/reports/pipeline-coverage.json \
-              --json
+#         # 静态自检：.cnb.yml 的上传 / 下载 / 复核阶段必须覆盖全部 9 项且无 glob。
+#         - name: check-pipeline-coverage
+#           script: |
+#             set -euo pipefail
+#             python3 scripts/release/release.py check-pipeline \
+#               --config .cnb.yml \
+#               --dir dist \
+#               --report dist/reports/pipeline-coverage.json \
+#               --json
 
-        - name: create-pre-release
-          type: git:release
-          options:
-            title: Workflow V3.4.0
-            descriptionFromFile: dist/agent-workflow-release-notes-3.4.0.md
-            preRelease: true
-            latest: false
-            overlying: true
+#         - name: create-pre-release
+#           type: git:release
+#           options:
+#             title: Workflow V3.4.0
+#             descriptionFromFile: dist/agent-workflow-release-notes-3.4.0.md
+#             preRelease: true
+#             latest: false
+#             overlying: true
 
-        - name: upload-assets
-          image: cnbcool/attachments:latest
-          settings:
-            tag: $CNB_BRANCH
-            attachments:
-              - "./dist/workflow-check_3.4.0_linux_amd64"
-              - "./dist/workflow-check_3.4.0_linux_arm64"
-              - "./dist/workflow-check_3.4.0_darwin_arm64"
-              - "./dist/workflow-check_3.4.0_windows_amd64.exe"
-              - "./dist/agent-workflow-src-3.4.0.tar.gz"
-              - "./dist/agent-workflow-src-3.4.0.tar.gz.sha256"
-              - "./dist/agent-workflow-release-notes-3.4.0.md"
-              - "./dist/SHA256SUMS"
-              - "./dist/version.json"
+#         - name: upload-assets
+#           image: cnbcool/attachments:latest
+#           settings:
+#             tag: $CNB_BRANCH
+#             attachments:
+#               - "./dist/workflow-check_3.4.0_linux_amd64"
+#               - "./dist/workflow-check_3.4.0_linux_arm64"
+#               - "./dist/workflow-check_3.4.0_darwin_arm64"
+#               - "./dist/workflow-check_3.4.0_windows_amd64.exe"
+#               - "./dist/agent-workflow-src-3.4.0.tar.gz"
+#               - "./dist/agent-workflow-src-3.4.0.tar.gz.sha256"
+#               - "./dist/agent-workflow-release-notes-3.4.0.md"
+#               - "./dist/SHA256SUMS"
+#               - "./dist/version.json"
 
-        - name: download-uploaded
-          image: cnbcool/attachments:latest
-          settings:
-            type: DOWNLOAD
-            tag: $CNB_BRANCH
-            attachments: "workflow-check_3.4.0_linux_amd64,workflow-check_3.4.0_linux_arm64,workflow-check_3.4.0_darwin_arm64,workflow-check_3.4.0_windows_amd64.exe,agent-workflow-src-3.4.0.tar.gz,agent-workflow-src-3.4.0.tar.gz.sha256,agent-workflow-release-notes-3.4.0.md,SHA256SUMS,version.json"
+#         - name: download-uploaded
+#           image: cnbcool/attachments:latest
+#           settings:
+#             type: DOWNLOAD
+#             tag: $CNB_BRANCH
+#             attachments: "workflow-check_3.4.0_linux_amd64,workflow-check_3.4.0_linux_arm64,workflow-check_3.4.0_darwin_arm64,workflow-check_3.4.0_windows_amd64.exe,agent-workflow-src-3.4.0.tar.gz,agent-workflow-src-3.4.0.tar.gz.sha256,agent-workflow-release-notes-3.4.0.md,SHA256SUMS,version.json"
 
-        - name: verify-uploaded
-          script: |
-            set -euo pipefail
-            if [ -n "${CNB_COMMIT:-}" ]; then
-              EXPECTED_COMMIT="${CNB_COMMIT}"
-            else
-              EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-            fi
-            python3 scripts/release/release.py verify-uploaded \
-              --assets dist/expected \
-              --downloads . \
-              --manifest dist/reports/expected-assets.json \
-              --commit "${EXPECTED_COMMIT}" \
-              --report dist/reports/upload-verification.json \
-              --json
+#         - name: verify-uploaded
+#           script: |
+#             set -euo pipefail
+#             if [ -n "${CNB_COMMIT:-}" ]; then
+#               EXPECTED_COMMIT="${CNB_COMMIT}"
+#             else
+#               EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+#             fi
+#             python3 scripts/release/release.py verify-uploaded \
+#               --assets dist/expected \
+#               --downloads . \
+#               --manifest dist/reports/expected-assets.json \
+#               --commit "${EXPECTED_COMMIT}" \
+#               --report dist/reports/upload-verification.json \
+#               --json
 
-        - name: promote-gate-pre
-          script: |
-            set -euo pipefail
-            if [ -n "${CNB_COMMIT:-}" ]; then
-              EXPECTED_COMMIT="${CNB_COMMIT}"
-            else
-              EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-            fi
-            python3 scripts/release/release.py promote-gate \
-              --stage pre-promote \
-              --report dist/reports/upload-verification.json \
-              --assets dist/expected \
-              --tag "${RELEASE_TAG}" \
-              --expected-commit "${EXPECTED_COMMIT}" \
-              --out dist/reports/promote-gate-pre.json
+#         - name: promote-gate-pre
+#           script: |
+#             set -euo pipefail
+#             if [ -n "${CNB_COMMIT:-}" ]; then
+#               EXPECTED_COMMIT="${CNB_COMMIT}"
+#             else
+#               EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+#             fi
+#             python3 scripts/release/release.py promote-gate \
+#               --stage pre-promote \
+#               --report dist/reports/upload-verification.json \
+#               --assets dist/expected \
+#               --tag "${RELEASE_TAG}" \
+#               --expected-commit "${EXPECTED_COMMIT}" \
+#               --out dist/reports/promote-gate-pre.json
 
-        - name: promote-ga
-          type: git:release
-          options:
-            title: Workflow V3.4.0
-            descriptionFromFile: dist/agent-workflow-release-notes-3.4.0.md
-            preRelease: false
-            latest: false
-            overlying: true
+#         - name: promote-ga
+#           type: git:release
+#           options:
+#             title: Workflow V3.4.0
+#             descriptionFromFile: dist/agent-workflow-release-notes-3.4.0.md
+#             preRelease: false
+#             latest: false
+#             overlying: true
 
-        - name: reupload-after-promote
-          image: cnbcool/attachments:latest
-          settings:
-            tag: $CNB_BRANCH
-            attachments:
-              - "./dist/workflow-check_3.4.0_linux_amd64"
-              - "./dist/workflow-check_3.4.0_linux_arm64"
-              - "./dist/workflow-check_3.4.0_darwin_arm64"
-              - "./dist/workflow-check_3.4.0_windows_amd64.exe"
-              - "./dist/agent-workflow-src-3.4.0.tar.gz"
-              - "./dist/agent-workflow-src-3.4.0.tar.gz.sha256"
-              - "./dist/agent-workflow-release-notes-3.4.0.md"
-              - "./dist/SHA256SUMS"
-              - "./dist/version.json"
+#         - name: reupload-after-promote
+#           image: cnbcool/attachments:latest
+#           settings:
+#             tag: $CNB_BRANCH
+#             attachments:
+#               - "./dist/workflow-check_3.4.0_linux_amd64"
+#               - "./dist/workflow-check_3.4.0_linux_arm64"
+#               - "./dist/workflow-check_3.4.0_darwin_arm64"
+#               - "./dist/workflow-check_3.4.0_windows_amd64.exe"
+#               - "./dist/agent-workflow-src-3.4.0.tar.gz"
+#               - "./dist/agent-workflow-src-3.4.0.tar.gz.sha256"
+#               - "./dist/agent-workflow-release-notes-3.4.0.md"
+#               - "./dist/SHA256SUMS"
+#               - "./dist/version.json"
 
-        - name: redownload-after-promote
-          image: cnbcool/attachments:latest
-          settings:
-            type: DOWNLOAD
-            tag: $CNB_BRANCH
-            attachments: "workflow-check_3.4.0_linux_amd64,workflow-check_3.4.0_linux_arm64,workflow-check_3.4.0_darwin_arm64,workflow-check_3.4.0_windows_amd64.exe,agent-workflow-src-3.4.0.tar.gz,agent-workflow-src-3.4.0.tar.gz.sha256,agent-workflow-release-notes-3.4.0.md,SHA256SUMS,version.json"
+#         - name: redownload-after-promote
+#           image: cnbcool/attachments:latest
+#           settings:
+#             type: DOWNLOAD
+#             tag: $CNB_BRANCH
+#             attachments: "workflow-check_3.4.0_linux_amd64,workflow-check_3.4.0_linux_arm64,workflow-check_3.4.0_darwin_arm64,workflow-check_3.4.0_windows_amd64.exe,agent-workflow-src-3.4.0.tar.gz,agent-workflow-src-3.4.0.tar.gz.sha256,agent-workflow-release-notes-3.4.0.md,SHA256SUMS,version.json"
 
-        - name: verify-after-promote
-          script: |
-            set -euo pipefail
-            if [ -n "${CNB_COMMIT:-}" ]; then
-              EXPECTED_COMMIT="${CNB_COMMIT}"
-            else
-              EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-            fi
-            python3 scripts/release/release.py verify-uploaded \
-              --assets dist/expected \
-              --downloads . \
-              --manifest dist/reports/expected-assets.json \
-              --commit "${EXPECTED_COMMIT}" \
-              --report dist/reports/post-promote-verification.json \
-              --json
+#         - name: verify-after-promote
+#           script: |
+#             set -euo pipefail
+#             if [ -n "${CNB_COMMIT:-}" ]; then
+#               EXPECTED_COMMIT="${CNB_COMMIT}"
+#             else
+#               EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+#             fi
+#             python3 scripts/release/release.py verify-uploaded \
+#               --assets dist/expected \
+#               --downloads . \
+#               --manifest dist/reports/expected-assets.json \
+#               --commit "${EXPECTED_COMMIT}" \
+#               --report dist/reports/post-promote-verification.json \
+#               --json
 
-        - name: promote-gate-post
-          script: |
-            set -euo pipefail
-            if [ -n "${CNB_COMMIT:-}" ]; then
-              EXPECTED_COMMIT="${CNB_COMMIT}"
-            else
-              EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-            fi
-            python3 scripts/release/release.py promote-gate \
-              --stage post-promote \
-              --report dist/reports/post-promote-verification.json \
-              --assets dist/expected \
-              --tag "${RELEASE_TAG}" \
-              --expected-commit "${EXPECTED_COMMIT}" \
-              --out dist/reports/promote-gate-post.json
+#         - name: promote-gate-post
+#           script: |
+#             set -euo pipefail
+#             if [ -n "${CNB_COMMIT:-}" ]; then
+#               EXPECTED_COMMIT="${CNB_COMMIT}"
+#             else
+#               EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+#             fi
+#             python3 scripts/release/release.py promote-gate \
+#               --stage post-promote \
+#               --report dist/reports/post-promote-verification.json \
+#               --assets dist/expected \
+#               --tag "${RELEASE_TAG}" \
+#               --expected-commit "${EXPECTED_COMMIT}" \
+#               --out dist/reports/promote-gate-post.json
 
-        - name: mark-latest
-          type: git:release
-          options:
-            title: Workflow V3.4.0
-            descriptionFromFile: dist/agent-workflow-release-notes-3.4.0.md
-            preRelease: false
-            latest: true
-            overlying: true
+#         - name: mark-latest
+#           type: git:release
+#           options:
+#             title: Workflow V3.4.0
+#             descriptionFromFile: dist/agent-workflow-release-notes-3.4.0.md
+#             preRelease: false
+#             latest: true
+#             overlying: true
 
-        - name: redownload-after-latest
-          image: cnbcool/attachments:latest
-          settings:
-            type: DOWNLOAD
-            tag: $CNB_BRANCH
-            attachments: "workflow-check_3.4.0_linux_amd64,workflow-check_3.4.0_linux_arm64,workflow-check_3.4.0_darwin_arm64,workflow-check_3.4.0_windows_amd64.exe,agent-workflow-src-3.4.0.tar.gz,agent-workflow-src-3.4.0.tar.gz.sha256,agent-workflow-release-notes-3.4.0.md,SHA256SUMS,version.json"
+#         - name: redownload-after-latest
+#           image: cnbcool/attachments:latest
+#           settings:
+#             type: DOWNLOAD
+#             tag: $CNB_BRANCH
+#             attachments: "workflow-check_3.4.0_linux_amd64,workflow-check_3.4.0_linux_arm64,workflow-check_3.4.0_darwin_arm64,workflow-check_3.4.0_windows_amd64.exe,agent-workflow-src-3.4.0.tar.gz,agent-workflow-src-3.4.0.tar.gz.sha256,agent-workflow-release-notes-3.4.0.md,SHA256SUMS,version.json"
 
-        - name: verify-after-latest
-          script: |
-            set -euo pipefail
-            if [ -n "${CNB_COMMIT:-}" ]; then
-              EXPECTED_COMMIT="${CNB_COMMIT}"
-            else
-              EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-            fi
-            python3 scripts/release/release.py verify-uploaded \
-              --assets dist/expected \
-              --downloads . \
-              --manifest dist/reports/expected-assets.json \
-              --commit "${EXPECTED_COMMIT}" \
-              --report dist/reports/final-verification.json \
-              --json
+#         - name: verify-after-latest
+#           script: |
+#             set -euo pipefail
+#             if [ -n "${CNB_COMMIT:-}" ]; then
+#               EXPECTED_COMMIT="${CNB_COMMIT}"
+#             else
+#               EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+#             fi
+#             python3 scripts/release/release.py verify-uploaded \
+#               --assets dist/expected \
+#               --downloads . \
+#               --manifest dist/reports/expected-assets.json \
+#               --commit "${EXPECTED_COMMIT}" \
+#               --report dist/reports/final-verification.json \
+#               --json
 
-        - name: promote-gate-latest
-          script: |
-            set -euo pipefail
-            if [ -n "${CNB_COMMIT:-}" ]; then
-              EXPECTED_COMMIT="${CNB_COMMIT}"
-            else
-              EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
-            fi
-            python3 scripts/release/release.py promote-gate \
-              --stage latest \
-              --report dist/reports/final-verification.json \
-              --assets dist/expected \
-              --tag "${RELEASE_TAG}" \
-              --expected-commit "${EXPECTED_COMMIT}" \
-              --out dist/reports/promote-gate-latest.json
+#         - name: promote-gate-latest
+#           script: |
+#             set -euo pipefail
+#             if [ -n "${CNB_COMMIT:-}" ]; then
+#               EXPECTED_COMMIT="${CNB_COMMIT}"
+#             else
+#               EXPECTED_COMMIT="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+#             fi
+#             python3 scripts/release/release.py promote-gate \
+#               --stage latest \
+#               --report dist/reports/final-verification.json \
+#               --assets dist/expected \
+#               --tag "${RELEASE_TAG}" \
+#               --expected-commit "${EXPECTED_COMMIT}" \
+#               --out dist/reports/promote-gate-latest.json
 
-        - name: release-verification-report
-          script: |
-            set -euo pipefail
-            python3 scripts/release/release.py report \
-              --dir dist \
-              --reports dist/reports \
-              --require-all
+#         - name: release-verification-report
+#           script: |
+#             set -euo pipefail
+#             python3 scripts/release/release.py report \
+#               --dir dist \
+#               --reports dist/reports \
+#               --require-all
 
-# ---------------------------------------------------------------------------
-# main 分支 push：单向镜像到 GitHub（https://github.com/WenqingSong/agent-workflow）
-#
-# 凭据来自私有密钥仓库：
-#   https://cnb.cool/framework-station/agent-workflow-password/-/blob/main/github-mirror.yml
-# 该文件自身声明 allow_slugs="framework-station/agent-workflow"、
-# allow_events="push"、allow_branches="main"，因此只有本仓库 main 分支的 push
-# 事件能引用它；GITHUB_USERNAME / GITHUB_TOKEN 只在流水线内以环境变量存在，
-# 不写入仓库、不写入 remote URL、不打印到日志。
-#
-# 同步语义：CNB 是唯一写入方，GitHub 是只读影子。推送后回读 GitHub 侧
-# refs/heads/main，与本地 HEAD 逐字比对，不一致即失败。
-# ---------------------------------------------------------------------------
-main:
-  vscode: *dev-config
-  push:
-    - name: mirror-to-github
-      imports: https://cnb.cool/framework-station/agent-workflow-password/-/blob/main/github-mirror.yml
-      docker:
-        image: golang:1.24
-      env:
-        MIRROR_TARGET: WenqingSong/agent-workflow
-        MIRROR_BRANCH: main
-      stages:
-        - name: mirror-preflight
-          script: |
-            set -euo pipefail
-            : "${GITHUB_USERNAME:?GITHUB_USERNAME 未注入：检查 github-mirror.yml 的 allow_slugs / allow_events / allow_branches}"
-            : "${GITHUB_TOKEN:?GITHUB_TOKEN 未注入：检查密钥仓库 github-mirror.yml}"
-            if [ "${CNB_BRANCH:-}" != "${MIRROR_BRANCH}" ]; then
-              echo "BLOCKED: 只镜像 ${MIRROR_BRANCH} 分支，当前触发分支 '${CNB_BRANCH:-<empty>}'"
-              exit 1
-            fi
-            git config --global --add safe.directory "$PWD"
-            git --version
-            echo "本地 HEAD: $(git rev-parse HEAD)"
-            echo "目标: https://github.com/${MIRROR_TARGET} refs/heads/${MIRROR_BRANCH}"
-            if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-              echo "检测到浅克隆，补全历史（首次镜像到空仓库时需要完整历史）"
-              git fetch --unshallow --tags origin \
-                || echo "WARNING: 补全历史失败，继续尝试推送（GitHub 侧已有相同历史时仍可成功）"
-            fi
+# # ---------------------------------------------------------------------------
+# # main 分支 push：单向镜像到 GitHub（https://github.com/WenqingSong/agent-workflow）
+# #
+# # 凭据来自私有密钥仓库：
+# #   https://cnb.cool/framework-station/agent-workflow-password/-/blob/main/github-mirror.yml
+# # 该文件自身声明 allow_slugs="framework-station/agent-workflow"、
+# # allow_events="push"、allow_branches="main"，因此只有本仓库 main 分支的 push
+# # 事件能引用它；GITHUB_USERNAME / GITHUB_TOKEN 只在流水线内以环境变量存在，
+# # 不写入仓库、不写入 remote URL、不打印到日志。
+# #
+# # 同步语义：CNB 是唯一写入方，GitHub 是只读影子。推送后回读 GitHub 侧
+# # refs/heads/main，与本地 HEAD 逐字比对，不一致即失败。
+# # ---------------------------------------------------------------------------
+# main:
+#   vscode: *dev-config
+#   push:
+#     - name: mirror-to-github
+#       imports: https://cnb.cool/framework-station/agent-workflow-password/-/blob/main/github-mirror.yml
+#       docker:
+#         image: golang:1.24
+#       env:
+#         MIRROR_TARGET: WenqingSong/agent-workflow
+#         MIRROR_BRANCH: main
+#       stages:
+#         - name: mirror-preflight
+#           script: |
+#             set -euo pipefail
+#             : "${GITHUB_USERNAME:?GITHUB_USERNAME 未注入：检查 github-mirror.yml 的 allow_slugs / allow_events / allow_branches}"
+#             : "${GITHUB_TOKEN:?GITHUB_TOKEN 未注入：检查密钥仓库 github-mirror.yml}"
+#             if [ "${CNB_BRANCH:-}" != "${MIRROR_BRANCH}" ]; then
+#               echo "BLOCKED: 只镜像 ${MIRROR_BRANCH} 分支，当前触发分支 '${CNB_BRANCH:-<empty>}'"
+#               exit 1
+#             fi
+#             git config --global --add safe.directory "$PWD"
+#             git --version
+#             echo "本地 HEAD: $(git rev-parse HEAD)"
+#             echo "目标: https://github.com/${MIRROR_TARGET} refs/heads/${MIRROR_BRANCH}"
+#             if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+#               echo "检测到浅克隆，补全历史（首次镜像到空仓库时需要完整历史）"
+#               git fetch --unshallow --tags origin \
+#                 || echo "WARNING: 补全历史失败，继续尝试推送（GitHub 侧已有相同历史时仍可成功）"
+#             fi
 
-        - name: mirror-push
-          script: |
-            set -euo pipefail
-            # 认证放在 http.extraheader：令牌不落到 remote URL，也不会被 git 报错信息带出
-            AUTH="AUTHORIZATION: basic $(printf '%s:%s' "${GITHUB_USERNAME}" "${GITHUB_TOKEN}" | base64 | tr -d '\n')"
-            REMOTE_URL="https://github.com/${MIRROR_TARGET}.git"
-            export GIT_TERMINAL_PROMPT=0
-            git config --global --add safe.directory "$PWD"
-            git remote remove github >/dev/null 2>&1 || true
-            git remote add github "${REMOTE_URL}"
-            # GitHub 为只读影子：分支按镜像语义强制对齐，Tag 一并同步
-            git -c http.extraheader="${AUTH}" push --force github "HEAD:refs/heads/${MIRROR_BRANCH}"
-            git -c http.extraheader="${AUTH}" push --force --tags github
+#         - name: mirror-push
+#           script: |
+#             set -euo pipefail
+#             # 认证放在 http.extraheader：令牌不落到 remote URL，也不会被 git 报错信息带出
+#             AUTH="AUTHORIZATION: basic $(printf '%s:%s' "${GITHUB_USERNAME}" "${GITHUB_TOKEN}" | base64 | tr -d '\n')"
+#             REMOTE_URL="https://github.com/${MIRROR_TARGET}.git"
+#             export GIT_TERMINAL_PROMPT=0
+#             git config --global --add safe.directory "$PWD"
+#             git remote remove github >/dev/null 2>&1 || true
+#             git remote add github "${REMOTE_URL}"
+#             # GitHub 为只读影子：分支按镜像语义强制对齐，Tag 一并同步
+#             git -c http.extraheader="${AUTH}" push --force github "HEAD:refs/heads/${MIRROR_BRANCH}"
+#             git -c http.extraheader="${AUTH}" push --force --tags github
 
-        - name: mirror-verify
-          script: |
-            set -euo pipefail
-            AUTH="AUTHORIZATION: basic $(printf '%s:%s' "${GITHUB_USERNAME}" "${GITHUB_TOKEN}" | base64 | tr -d '\n')"
-            REMOTE_URL="https://github.com/${MIRROR_TARGET}.git"
-            export GIT_TERMINAL_PROMPT=0
-            LOCAL_SHA="$(git rev-parse HEAD)"
-            REMOTE_SHA="$(git -c http.extraheader="${AUTH}" ls-remote "${REMOTE_URL}" "refs/heads/${MIRROR_BRANCH}" | awk '{print $1}')"
-            echo "本地 HEAD          : ${LOCAL_SHA}"
-            echo "GitHub ${MIRROR_BRANCH}         : ${REMOTE_SHA:-<empty>}"
-            if [ "${REMOTE_SHA}" != "${LOCAL_SHA}" ]; then
-              echo "FAILED: GitHub 侧 ${MIRROR_BRANCH} 与本次推送的 Commit 不一致"
-              exit 1
-            fi
-            echo "OK: GitHub 镜像已对齐 ${LOCAL_SHA}"
+#         - name: mirror-verify
+#           script: |
+#             set -euo pipefail
+#             AUTH="AUTHORIZATION: basic $(printf '%s:%s' "${GITHUB_USERNAME}" "${GITHUB_TOKEN}" | base64 | tr -d '\n')"
+#             REMOTE_URL="https://github.com/${MIRROR_TARGET}.git"
+#             export GIT_TERMINAL_PROMPT=0
+#             LOCAL_SHA="$(git rev-parse HEAD)"
+#             REMOTE_SHA="$(git -c http.extraheader="${AUTH}" ls-remote "${REMOTE_URL}" "refs/heads/${MIRROR_BRANCH}" | awk '{print $1}')"
+#             echo "本地 HEAD          : ${LOCAL_SHA}"
+#             echo "GitHub ${MIRROR_BRANCH}         : ${REMOTE_SHA:-<empty>}"
+#             if [ "${REMOTE_SHA}" != "${LOCAL_SHA}" ]; then
+#               echo "FAILED: GitHub 侧 ${MIRROR_BRANCH} 与本次推送的 Commit 不一致"
+#               exit 1
+#             fi
+#             echo "OK: GitHub 镜像已对齐 ${LOCAL_SHA}"
