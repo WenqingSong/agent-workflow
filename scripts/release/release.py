@@ -135,6 +135,7 @@ REQUIRED_DIST_PATHS = (
     ".agent/templates/upstream.yaml.template",
     ".agent/templates/registry/registry.template.md",
     "docs/design/agent-workflow.md",
+    "docs/LLM_PROJECT_CONTEXT.md",
 )
 
 # 七角色固定清单：数量变化必须是有意的规范变更，而不是新增文件被漏数。

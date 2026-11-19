@@ -6,10 +6,18 @@
 
 项目关注的是 **Agent 写出的代码如何被审查、决策和交付**。它提供协作协议与只读校验器，不负责自动调用模型、调度 Agent 或替人合并代码。
 
+> ## 给 LLM / AI Agent 的完整分析文档
+>
+> **[`docs/LLM_PROJECT_CONTEXT.md`](docs/LLM_PROJECT_CONTEXT.md)**
+>
+> 该文档是独立的单文件上下文包：包含事实源优先级、路线与角色、`state.yaml` 全部字段、五个 Gate 的精确算法、R-1~R-4 / INV-1~INV-7、交接契约、Git Lifecycle、循环熔断、Adoption、发布工程、能力边界、常见误读与变更影响清单。
+>
+> README 面向人类读者；如果你是被要求**分析、修改或审查本仓库**的模型，请先完整读取上述文档，不要只依赖本 README。
+
 | 项目属性 | 当前实现 |
 | --- | --- |
 | 类型 | 可复制到其他 Git 仓库的源码包（source-vendored package） |
-| 核心组成 | 七角色协作规范、任务状态与证据文件、五个机器 Gate、Go 校验器、循环熔断（DANGER）协议、安装 / 升级工具 |
+| 核心组成 | 七角色协作规范、任务状态与证据文件、五个机器 Gate、Go 校验器、循环熔断（DANGER）协议、安装 / 升级工具、发布工程 |
 | 运行依赖 | Git；构建校验器需要 Go 1.23+；安装 / 升级工具需要 Python 3.10+ |
 | 版本 | Workflow V3.4.0（源码版本 `3.4.0`）；Go Module 名 `workflow-v2-engine` 是保留的历史标识 |
 | 发布状态 | `v3.4.0` 由 Tag 推送触发 CNB 发布流水线；发布是否完成以 CNB Release、附件校验与 Git Tag 核验结果为准 |
@@ -19,7 +27,7 @@
 在多轮 AI 辅助开发中，只靠聊天记录传递任务，容易出现三个问题：后续角色沿用过期上下文、实现者审查自己的代码、审查结论与后来变化的代码不再对应。项目把角色间的交接建立在 **Git 提交 + 仓库文件** 上，并在交接前检查实际仓库状态。
 
 ```text
-NORMAL / COMPLEX（六角色）
+NORMAL / COMPLEX（六角色模型）
 TaskBuilder → Analyst → Coder → Cleaner → OwnerGate → Deliverer → 人类 Owner 集成
     任务       设计       实现      独立审查     人工决策记录     交付验证
 
@@ -27,7 +35,20 @@ ARCHITECT（七角色，不经过 Cleaner）
 TaskBuilder → Analyst → Architect → OwnerGate（结构验证 → Owner 决策）→ Deliverer → 人类 Owner 集成
 ```
 
-每个角色使用独立会话，重新读取当前 Git 和任务文件。人类 Owner 保留关键设计接受、核心逻辑接受及最终分支集成的决定权。角色职责与可修改文件的边界见 [协作规范](.agent/specs/AgentCollaborationSpecification.md) 和 [职责边界](.agent/specs/Five-AgentResponsibilityBoundary.md)。
+`NORMAL` 不需要独立 Contract，实际路径为 TaskBuilder → Coder → Cleaner → OwnerGate → Deliverer；`COMPLEX` 与 `ARCHITECT` 先由 Analyst 形成 Contract。每个角色使用独立会话，重新读取当前 Git 和任务文件。人类 Owner 保留关键设计接受、核心逻辑接受及最终分支集成的决定权。角色职责与可修改文件的边界见 [协作规范](.agent/specs/AgentCollaborationSpecification.md) 和 [职责边界](.agent/specs/Five-AgentResponsibilityBoundary.md)。
+
+### 角色与产物
+
+| 角色 | 主要职责 | 主要产物 | 出口 Gate |
+| --- | --- | --- | --- |
+| TaskBuilder | 定义任务、判定路线、自动发现基线并初始化任务分支 | `task.md`、初始 `state.yaml` | NORMAL 自检 `coder-start`；COMPLEX / ARCHITECT 只做同步自检 |
+| Analyst | 调查约束、形成方案、写 Contract、落实共享资源预留 | `contract.md`、`docs/design/*`、`state.contract` | `coder-start` |
+| Architect | 交付结构骨架、依赖方向、结构测试与 `architecture.md`（仅 `ARCHITECT`） | `architecture.md`、结构骨架、结构测试 | `cleaner-start` |
+| Coder | 在 Contract 范围内实现 AC、写测试、发起 Review Request | 业务代码、migration、测试、`state.review` | `cleaner-start` |
+| Cleaner | 独立审查实现与测试可信度，整理核心逻辑（`NORMAL` / `COMPLEX`） | `findings.md`、`core-logic.md`、`state.review` | `owner-gate-start` |
+| OwnerGate | 提炼核心机制、解释给 Owner、持久化 Owner 决定；`ARCHITECT` 下先独立验证结构 | `owner-decision.md`、`state.owner`；`ARCHITECT` V1 另产出审查证据 | `delivery-start` |
+| Deliverer | 在目标环境执行里程碑验收，记录三个不可变 SHA | `delivery.md`、`state.delivery` | `merge-ready` |
+| Owner（人类） | 任务 / 分支边界、Contract、核心逻辑接受、最终集成 | 决策，不是文件 | — |
 
 ## 核心设计
 
@@ -36,6 +57,8 @@ TaskBuilder → Analyst → Architect → OwnerGate（结构验证 → Owner 决
 Contract、代码审查和交付验证分别绑定明确的 Git commit SHA。以代码审查为例，`review.target` 指向实现提交；后续只允许该阶段定义的任务元数据提交。如果实现代码在审查后变化，旧的 `CLEAN` 结论会在校验时失效，而不是继续信任一个写在状态文件里的结果。
 
 例如：Cleaner 针对实现提交 `C1` 给出 `CLEAN`，之后有人修改业务代码形成 `C2`；即使状态文件仍写着 `CLEAN`，后续 Gate 也会拒绝沿用针对 `C1` 的审查结论。
+
+证据写入采用两阶段提交：内容提交（A1 / C1 / D1）先产生不可变 SHA，元数据提交（A2 / C2 / D2）再把该 SHA 写入 `state.yaml`。新证据要求完整 40 位 SHA；Engine 仅为历史兼容接受短 SHA，并统一解析为完整 SHA 后再比较。
 
 ### 2. 用只读 Gate 检查交接条件
 
@@ -49,15 +72,19 @@ Contract、代码审查和交付验证分别绑定明确的 Git commit SHA。以
 | `delivery-start` | 人类接受的审查目标是否仍有效 |
 | `merge-ready` | 交付验证是否仍对应当前 feature 与集成分支基线 |
 
-Gate 同时检查交接所需的 Git 状态，例如工作区是否干净、本地 feature 是否已同步到远端。`merge-ready` 仅表示机器条件满足，最终合并仍由 Owner 决定。
+Gate 同时检查交接所需的 Git 状态，例如工作区是否干净、本地 feature 是否已同步到远端。`blocked.active=true` 时五个 Gate 一律拒绝，DANGER 停机不需要新增 Gate。`merge-ready` 仅表示机器条件满足，最终合并仍由 Owner 决定。
 
 ### 3. 在共享分支登记跨任务资源
 
 对迁移版本号、错误码域等需要全局分配的资源，任务状态只声明需要的值；校验器再从配置指定的集成分支 Registry 读取授权记录，检查资源值、所属任务和状态。资源种类由项目配置声明，Go 校验器不内置具体的业务资源类型。
 
+Registry 的有效状态为 `RESERVED` / `ACTIVE`；Owner 必须与 `state.yaml` 的 `task_id` 精确一致。Feature 分支自行声明不构成授权。
+
 ### 4. 将通用规则与项目差异分开
 
 角色职责、证据绑定和 Gate 属于通用 Workflow Core。首次接入一个项目时，再通过 [Adoption 规范](.agent/specs/WorkflowAdoption.md) 确定集成分支、构建命令、Registry 路径等项目事实，并生成该项目的 `.agent/workflow.yaml`。接入流程是 `DISCOVER → RESOLVE → MATERIALIZE → VERIFY → CLEANUP`。
+
+`workflow.yaml` 是宿主的机器配置，不进入分发包；未完成 Adoption 的仓库不能直接运行 Gate 示例。
 
 ### 5. 把 Workflow 指令与宿主规则分开
 
@@ -65,7 +92,7 @@ Workflow 专用入口是 [`.agent/specs/WorkflowAgentDirective.md`](.agent/specs
 
 宿主根 `AGENTS.md` 属于宿主项目：存在时角色读取并遵守，不存在时不创建、不阻断。激活条件、缺失处理与退出规则只在上述 Directive 中维护，本 README 不复制。
 
-### 6. 任务初始化自动化（V3.3）
+### 6. 任务初始化自动化
 
 Owner 只需提供任务目标或任务清单。TaskBuilder 会：
 
@@ -77,7 +104,7 @@ Owner 只需提供任务目标或任务清单。TaskBuilder 会：
 
 Owner 仍可显式指定 Slug、分支与基线；此时它们是硬约束。TaskBuilder 的 Git 权限没有扩大：仍然只创建当前任务的初始分支，不做 Merge、Rebase、Force Push 或删除分支。
 
-### 7. 基于 Task 的独立 Session 协作（V3.4）
+### 7. 基于 Task 的独立 Session 协作
 
 角色之间的交接不再依赖上一个 Agent 编写的说明书。开发者只提供角色与任务目录：
 
@@ -88,16 +115,18 @@ Owner 仍可显式指定 Slug、分支与基线；此时它们是硬约束。Tas
 
 角色按 `.agent/specs/WorkflowAgentDirective.md` §2.1 的五步启动，输出开工声明（`ROLE` / `TASK` / `STAGE` / `TARGET` / `ENTRY_GATE`），并按 §2.2 的阶段推导表自行判断当前该做什么、走哪个入口 Gate。`mode` 与 Finding 编号不再作为必填输入，而是从 `state.yaml` 与 `findings.md` 推导。
 
-出站交接固定四行：
+出站交接固定四行，必须是最终回答的最后一个章节：
 
 ```text
+## 出站交接
+
 RESULT: <本角色终态>
 NEXT_ROLE: <下一角色>
 TASK_PATH: .agent/tasks/<task-slug>/
 OWNER_ACTION: <NONE | CONTINUE | DECIDE: ... | DO: ... | STOP>
 ```
 
-`HANDOFF_PROMPT` 已取消。任务事实、失败原因与 SHA 分别在 Task Artifact、`loop-ledger.md` 与 Git 中；交接块只做定位。失败交接必须在 `loop-ledger.md` 或对应 Artifact 落盘后才能发出。
+`HANDOFF_PROMPT` 已取消。任务事实、失败原因与 SHA 分别在 Task Artifact、`loop-ledger.md` 与 Git 中；交接块只做定位。失败交接必须在 `loop-ledger.md` 或对应 Artifact 落盘并 push 后才能发出。
 
 ## 安装与升级
 
@@ -125,7 +154,7 @@ OWNER_ACTION: <NONE | CONTINUE | DECIDE: ... | DO: ... | STOP>
   --owner <owner> --owner-authorized --execute
 ```
 
-安装 / 升级不会创建或覆盖宿主根 `AGENTS.md`、根 README、CI、业务 Design、`.agent/workflow.yaml`、Tasks、Registry 与历史 Evidence。升级以 `.agent/upstream.yaml` 记录的精确 B 快照做三方比较；冲突、B 缺失或未授权删除时 fail closed。Registry 默认不创建，只有显式 `--resource KIND=PATH` 才创建空表。
+安装 / 升级不会创建或覆盖宿主根 `AGENTS.md`、根 README、CI、业务 Design、`.agent/workflow.yaml`、Tasks、Registry 与历史 Evidence。升级以 `.agent/upstream.yaml` 记录的精确 B 快照做三方比较；冲突、B 缺失或未授权删除时 fail closed，并自动回滚、保留备份与报告。Registry 默认不创建，只有显式 `--resource KIND=PATH` 才创建空表。
 
 工具当前在 Linux 完成真实 E2E 验证；Windows 原生环境未验证，需使用 WSL2 / Linux 容器。`v3.4.0` Tag、Release 与 binary 资产由发布流水线产生；是否已完成 GA 以 CNB Release 与附件核验为准。
 
@@ -133,12 +162,15 @@ OWNER_ACTION: <NONE | CONTINUE | DECIDE: ... | DO: ... | STOP>
 
 ```text
 .agent/roles/             七个角色的操作说明
-.agent/specs/             Workflow 专用指令入口、协作、职责边界、循环熔断与安装/升级规范
+.agent/specs/             Workflow 专用指令入口、协作、职责边界、路线、循环熔断、交接、Git Lifecycle、安装/升级规范
+.agent/specs/tools/       只读 Git Lifecycle 自检（baseline / preflight / commit-check / push-check / verify-remote / handoff-check）
 .agent/adoption/          Source Distribution 构建、首装、升级、校验与恢复工具
 .agent/engine/            独立 Go Module：workflow-check 及测试
 .agent/templates/         项目接入、机器配置、upstream 与 Registry 模板
+.agent/bin/               本地生成的 workflow-check（Git ignore）
 docs/design/              设计取舍与完整状态模型（package_only，不覆盖宿主）
 docs/releases/            Release Notes（package_only，不覆盖宿主）
+docs/LLM_PROJECT_CONTEXT.md  给 LLM / Agent 的单文件完整分析文档（package_only）
 scripts/release/          Release 构建、资产校验与 promote 门槛（package_only）
 PACKAGE_MANIFEST.md       分发包包含/排除内容与发布消费者契约
 ```
@@ -153,11 +185,16 @@ Workflow Role 的入口是 `.agent/specs/WorkflowAgentDirective.md`，由角色 
 GOWORK=off go -C .agent/engine test -count=1 ./...
 GOWORK=off go -C .agent/engine vet ./...
 GOWORK=off go -C .agent/engine build ./...
+
 python3 .agent/adoption/tests/test_workflow_adoption.py -v
 python3 .agent/adoption/tests/test_git_lifecycle.py -v
 python3 .agent/adoption/tests/test_taskbuilder_autonomy.py -v
 python3 .agent/adoption/tests/test_handoff_contract.py -v
 python3 .agent/adoption/tests/test_cold_start.py -v
+python3 .agent/adoption/tests/test_route_acceptance.py -v
+
+python3 scripts/release/tests/test_release_scripts.py -v
+git diff --check
 ```
 
 接入宿主项目后，可构建并运行一个具体任务的 Gate：
@@ -174,6 +211,23 @@ GOWORK=off go -C .agent/engine build -o ../bin/workflow-check ./cmd/workflow-che
 本地直接 `go build` 出来的是开发构建：`version` 输出 `framework_version: dev`、`source_commit: unknown`、`build_source: dev`。正式资产的版本与 Commit 由发布构建通过确定的 ldflags 注入，不写死 SHA，也不嵌入构建时间。
 
 本仓库是分发包，**有意不包含**宿主项目的 live `.agent/workflow.yaml`、Registry 分配和任务数据；因此 Gate 示例需在完成 Adoption 的宿主仓库中运行。更完整的接入材料见 [包清单](PACKAGE_MANIFEST.md)、[运行时说明](.agent/README.md) 和 [架构设计](docs/design/agent-workflow.md)。
+
+## 文档地图
+
+| 想了解 | 入口 |
+| --- | --- |
+| 项目全貌与快速验证 | 本 README |
+| **给 LLM / Agent 的完整项目分析** | [`docs/LLM_PROJECT_CONTEXT.md`](docs/LLM_PROJECT_CONTEXT.md) |
+| 为什么这样设计、状态模型与不变量 | [`docs/design/agent-workflow.md`](docs/design/agent-workflow.md) |
+| 角色激活、启动串、阶段推导 | [`.agent/specs/WorkflowAgentDirective.md`](.agent/specs/WorkflowAgentDirective.md) |
+| 角色职责与 Artifact 所有权 | [`.agent/specs/AgentCollaborationSpecification.md`](.agent/specs/AgentCollaborationSpecification.md)、[`.agent/specs/Five-AgentResponsibilityBoundary.md`](.agent/specs/Five-AgentResponsibilityBoundary.md) |
+| 路线判定与 R-1~R-4 | [`.agent/specs/WorkflowRouteSelection.md`](.agent/specs/WorkflowRouteSelection.md) |
+| 交接四字段与失败落盘 | [`.agent/specs/WorkflowHandoffContract.md`](.agent/specs/WorkflowHandoffContract.md) |
+| Git 时机与六种 Commit | [`.agent/specs/WorkflowGitLifecycle.md`](.agent/specs/WorkflowGitLifecycle.md) |
+| 两轮熔断与 DANGER | [`.agent/specs/WorkflowLoopCircuitBreaker.md`](.agent/specs/WorkflowLoopCircuitBreaker.md) |
+| 首次接入与 B/L/N 升级 | [`.agent/specs/WorkflowAdoption.md`](.agent/specs/WorkflowAdoption.md)、[`.agent/adoption/README.md`](.agent/adoption/README.md) |
+| 分发内容与发布契约 | [`PACKAGE_MANIFEST.md`](PACKAGE_MANIFEST.md)、[`scripts/release/README.md`](scripts/release/README.md) |
+| 版本变化 | [`docs/releases/`](docs/releases/) |
 
 ## 已知边界
 

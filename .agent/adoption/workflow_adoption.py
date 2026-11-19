@@ -78,6 +78,7 @@ PACKAGE_ONLY_FILES = {
     "PACKAGE_MANIFEST.md",
     ".cnb.yml",
     "docs/design/agent-workflow.md",
+    "docs/LLM_PROJECT_CONTEXT.md",
 }
 PACKAGE_ONLY_PREFIXES = (
     ".agent/adoption/tests/",

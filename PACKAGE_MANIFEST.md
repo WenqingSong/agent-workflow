@@ -26,7 +26,7 @@ Source Distribution（源码分发包），由 `.agent/adoption/workflow-adoptio
 | 分类 | 内容 | 进入分发包 | 安装到宿主 |
 | --- | --- | --- | --- |
 | `managed` | `.agent/roles/**`、`.agent/specs/**`、`.agent/templates/**`、`.agent/engine/**`、`.agent/adoption/**`（`tests/` 除外）、`.agent/README.md`、`.agent/VERSION`、`.agent/bin/.gitignore` | 是 | 是；升级时参与 B/L/N |
-| `package_only` | 根 `README.md`、`PACKAGE_MANIFEST.md`、`.cnb.yml`、`docs/design/agent-workflow.md`、`docs/releases/**`、`scripts/release/**`、`.agent/adoption/tests/**` | 是 | 否；仅供阅读、发布校验与追溯 |
+| `package_only` | 根 `README.md`、`PACKAGE_MANIFEST.md`、`.cnb.yml`、`docs/design/agent-workflow.md`、`docs/LLM_PROJECT_CONTEXT.md`、`docs/releases/**`、`scripts/release/**`、`.agent/adoption/tests/**` | 是 | 否；仅供阅读、发布校验与追溯 |
 | `generated` | `.agent/workflow.yaml`、`.agent/upstream.yaml`、`.agent/bin/workflow-check` | 否 | 仅由成功的 install / upgrade 事务生成或更新 |
 | `protected` | 根 `AGENTS.md`、宿主 README / CI / Design、`.agent/workflow.yaml`、`.agent/tasks/**`、`.agent/registry/**`、业务文件、已有证据 | 否 | 永不覆盖或删除 |
 
@@ -45,6 +45,7 @@ Source Distribution（源码分发包），由 `.agent/adoption/workflow-adoptio
 - Adoption tooling（`.agent/adoption/`：分发、首装、升级、校验、恢复）
 - Bootstrap material（`.agent/README.md`、`.agent/VERSION`、`.agent/bin/.gitignore`）
 - Architecture Design（`docs/design/agent-workflow.md`，`package_only`）
+- LLM Project Context（`docs/LLM_PROJECT_CONTEXT.md`，`package_only`）：供 LLM / Agent 单文件加载的完整项目分析
 - Release Notes（`docs/releases/v3.4.0.md`，`package_only`）
 - Release engineering（`scripts/release/`：四平台构建、资产校验、promote 门槛与失败注入测试，`package_only`）
 - Root `README.md`、本 Manifest、`.cnb.yml`（`package_only`）
