@@ -1,4 +1,4 @@
-# Workflow Git Lifecycle 规范（V3.3.0）
+# Workflow Git Lifecycle 规范（V5.0.0）
 
 > 适用对象：所有已激活的 Workflow Role Session——TaskBuilder、Analyst、Architect、Coder、Cleaner、OwnerGate、Deliverer。
 > 规范地位：本文是「角色何时可以 Stage / Commit / Push / HANDOFF」以及「失败、DANGER、Registry 等强制证据如何落 Git」的**唯一规范事实源**。

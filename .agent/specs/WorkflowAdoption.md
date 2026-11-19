@@ -1,6 +1,6 @@
-# Workflow V3 项目 Adoption / 安装 / 升级规范
+# Workflow V5 项目 Adoption / 安装 / 升级规范
 
-本文定义 Workflow V3 的 **Project Adoption Procedure**、**首次安装协议** 与 **安全升级协议**。它是迁移 / 安装 / 升级协议，不是新增的第七个长期 Agent Role。
+本文定义 Workflow V5 的 **Project Adoption Procedure**、**首次安装协议** 与 **安全升级协议**。它是迁移 / 安装 / 升级协议，不是新增的第七个长期 Agent Role。
 
 正常六角色运行（`TaskBuilder → Analyst → Coder → Cleaner → OwnerGate → Deliverer → Owner Integration`）不依赖本文，也不依赖临时文件 `PROJECT_ADAPTATION.md`。本文只在 Adoption / 安装 / 升级时被读取。
 
@@ -616,7 +616,7 @@ PROJECT_ADAPTATION.md: RETAINED
 
 ## 12. Migration / Registry 关键抽象
 
-当前 my-shop 使用 `golang-migrate` + 全局 migration version Registry + error code domain Registry，但**这些不是所有项目都必须有**。不要把 Workflow V3 Core 写死成「所有项目都必须有 migrations.md 和 error-codes.md」。
+当前 my-shop 使用 `golang-migrate` + 全局 migration version Registry + error code domain Registry，但**这些不是所有项目都必须有**。不要把 Workflow V5 Core 写死成「所有项目都必须有 migrations.md 和 error-codes.md」。
 
 Adoption 必须逐项判断：
 

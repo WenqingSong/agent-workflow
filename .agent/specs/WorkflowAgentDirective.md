@@ -120,7 +120,7 @@ ENTRY_GATE: <cleaner-start = PASS | none>
 
 ### 2.4 旧式输入兼容
 
-| 旧式输入 | V3.4 处理 |
+| 旧式输入 | V5.0 处理 |
 | --- | --- |
 | `mode: ...` | 作为**覆盖提示**；与推导结果一致时采用，冲突时 `BLOCKED`，不得静默忽略 |
 | `task_path: .agent/tasks/<slug>/task.md` | 接受；规范统一写目录，Engine 两者都接受 |

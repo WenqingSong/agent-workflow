@@ -1,4 +1,4 @@
-"""End-to-end tests for Workflow V3 install/upgrade/adoption tooling.
+"""End-to-end tests for Workflow V5 install/upgrade/adoption tooling.
 
 These tests only use temporary host repositories.  They never install into a
 real business project and never create tags, releases or remote branches.

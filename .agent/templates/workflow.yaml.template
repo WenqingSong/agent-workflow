@@ -1,4 +1,4 @@
-# Workflow V3 Machine Configuration 模板
+# Workflow V5 Machine Configuration 模板
 # Adoption 时 materialize 为宿主项目的 `.agent/workflow.yaml`（长期机器配置，非临时文件）。
 # 该文件不由发布包直接覆盖；首次安装由 workflow-adoption 按 Owner 确认值生成，
 # 升级时始终保留宿主现有配置。

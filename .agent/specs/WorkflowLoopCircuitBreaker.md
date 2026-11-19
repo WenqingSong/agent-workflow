@@ -1,4 +1,4 @@
-# Workflow 循环熔断规范（V3.1.0，V3.2.0 七角色一致性修订）
+# Workflow 循环熔断规范（V5.0.0，沿用 V3.1.0 预算与 V3.2.0 七角色修订）
 
 > 适用对象：所有已激活的 Workflow Role Session——TaskBuilder、Analyst、Architect、Coder、Cleaner、OwnerGate、Deliverer。
 > 规范地位：本文是「同一 Task 同一根因最多两轮阻塞往返」以及 `loop-ledger.md` / `danger-report.md` 两个证据文件的**唯一规范事实源**。角色 Prompt 只写触发点与停止规则，不复制计数细节。

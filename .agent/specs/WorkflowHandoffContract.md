@@ -1,4 +1,4 @@
-# Workflow Handoff Contract（V3.4.0）
+# Workflow Handoff Contract（V5.0.0）
 
 本文件定义七角色统一的**出站交接**规范。
 
@@ -286,7 +286,7 @@ TASK_BUILDER|DANGER|DANGER|NONE|STOP|none|YES
 
 ## 11. 向后兼容
 
-| 旧形态 | V3.4 处理 |
+| 旧形态 | V5.0 处理 |
 | --- | --- |
 | 交接块含 `HANDOFF_PROMPT` | 接收者只取 `NEXT_ROLE` / `TASK_PATH` / `OWNER_ACTION`；`HANDOFF_PROMPT` 不得作为事实来源 |
 | 启动串为 `mode: ...` + `task_path: <task.md>` | 接受，但仅作为覆盖提示；与推导结果冲突 → `BLOCKED` |

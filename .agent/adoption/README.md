@@ -1,6 +1,6 @@
 # Workflow Adoption Tool
 
-`.agent/adoption/` 是 Workflow V3 的轻量安装 / 升级入口。它不替代 Go Engine，
+`.agent/adoption/` 是 Workflow V5 的轻量安装 / 升级入口。它不替代 Go Engine，
 不重造包管理器，只负责：
 
 - 从干净 Commit 生成可校验的 Source Distribution；
@@ -167,6 +167,6 @@ python3 .agent/adoption/tests/test_workflow_adoption.py -v
 
 ## Version Boundary
 
-当前 `.agent/VERSION` 是 `3.4.0`（Source Version）。`v3.4.0` Tag、Release、四平台
-binary 资产、`SHA256SUMS` 与 `version.json` 由发布流水线产生；本目录不创建 Tag / Release，
+当前 `.agent/VERSION` 是 `5.0.0`（Source Version）。`v5.0.0` Tag、Release、四平台
+binary 资产、`SHA256SUMS` 与 `version.json` 由发布流程产生；本次 V5.0.0 由手工发布流程创建。本目录不创建 Tag / Release，
 也不伪造正式发布地址。发布是否完成以 CNB Release 与附件核验结果为准。

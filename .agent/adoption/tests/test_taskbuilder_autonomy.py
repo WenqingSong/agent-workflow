@@ -222,20 +222,20 @@ class TaskBuilderAutonomyTest(unittest.TestCase):
 
     def test_version_and_release_metadata(self) -> None:
         version = text(VERSION).strip()
-        self.assertEqual(version, "3.4.0")
+        self.assertEqual(version, "5.0.0")
         manifest = text(MANIFEST)
-        self.assertIn("Workflow V3.4.0", manifest)
-        self.assertIn("3.4.0", manifest)
+        self.assertIn("Workflow V5.0.0", manifest)
+        self.assertIn("5.0.0", manifest)
         cnb = text(CNB)
-        self.assertIn("v3.4.0:", cnb)
-        self.assertIn("RELEASE_TAG: v3.4.0", cnb)
-        self.assertIn("workflow-check_3.4.0_linux_amd64", cnb)
+        self.assertIn("v5.0.0:", cnb)
+        self.assertIn("RELEASE_TAG: v5.0.0", cnb)
+        self.assertIn("workflow-check_5.0.0_linux_amd64", cnb)
         self.assertNotIn("workflow-check_3.3.0_linux_amd64", cnb)
-        release = REPO / "docs/releases/v3.4.0.md"
-        self.assertTrue(release.is_file(), "缺少 docs/releases/v3.4.0.md")
-        self.assertIn("V3.4.0", text(release))
+        release = REPO / "docs/releases/v5.0.0.md"
+        self.assertTrue(release.is_file(), "缺少 docs/releases/v5.0.0.md")
+        self.assertIn("V5.0.0", text(release))
         for readme in (README, AGENT_README):
-            self.assertIn("V3.4", text(readme), str(readme))
+            self.assertIn("V5.0", text(readme), str(readme))
 
     def test_v310_is_marked_historical(self) -> None:
         body = text(RELEASE_310)

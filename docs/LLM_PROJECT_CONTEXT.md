@@ -1,10 +1,10 @@
-# Workflow V3.4.0 — LLM 项目上下文（单文件完整分析）
+# Workflow V5.0.0 — LLM 项目上下文（单文件完整分析）
 
 > **文档用途**：把整个仓库压缩成一份可被 LLM / AI Agent 单次加载、直接用于推理与改动的上下文。README 面向人类读者；本文面向需要理解「规则如何被机器执行」的模型。
 >
-> **快照基线**：`.agent/VERSION = 3.4.0`。本文描述**工作树中的源码事实**，不绑定某个 Commit，也不声称任何 Release 已发布。
+> **快照基线**：`.agent/VERSION = 5.0.0`。本文描述**工作树中的源码事实**，不绑定某个 Commit，也不声称任何 Release 已发布。
 >
-> **命名提示**：Go Module 名 `workflow-v2-engine`、State Schema v2/v3 都是历史技术标识，与 Workflow Major Version（当前 V3）不是同一概念。
+> **命名提示**：Go Module 名 `workflow-v2-engine`、State Schema v2/v3 都是历史技术标识，与 Workflow Major Version（当前 V5）不是同一概念。历史 V3.x 发布说明与任务证据保留为历史记录。
 >
 > **给模型的阅读建议**：
 >
@@ -37,7 +37,7 @@
 | 类型 | 可复制到其他 Git 仓库的源码包（Source Distribution） |
 | 核心组成 | 角色 Prompt、协作规范、任务状态/证据文件、五个 Gate、Go 校验器、循环熔断协议、安装/升级工具、发布工程 |
 | 运行依赖 | Git；构建校验器需要 Go 1.23+；安装/升级工具需要 Python 3.10+ |
-| 版本 | 源码版本 `3.4.0`；发布 Tag 为 `v3.4.0`，由 Tag 推送触发 CNB 流水线 |
+| 版本 | 源码版本 `5.0.0`；发布 Tag 为 `v5.0.0`，由手工发布流程创建 |
 | 安装位置 | 宿主仓库的 `.agent/` 命名空间 |
 
 ### 1.2 不是什么
@@ -529,7 +529,7 @@ ENTRY_GATE: <cleaner-start = PASS | none>
 
 ---
 
-## 11. 出站交接契约（V3.4）
+## 11. 出站交接契约（V5.0）
 
 ### 11.1 输出位置与字段
 
@@ -851,10 +851,10 @@ B 快照缺失或损坏时，只能恢复快照或按 B 重新安装，**不得�
 
 | 平台 | GOOS | GOARCH | 文件名 |
 | --- | --- | --- | --- |
-| Linux x86-64 | `linux` | `amd64` | `workflow-check_3.4.0_linux_amd64` |
-| Linux ARM64 | `linux` | `arm64` | `workflow-check_3.4.0_linux_arm64` |
-| macOS Apple Silicon | `darwin` | `arm64` | `workflow-check_3.4.0_darwin_arm64` |
-| Windows x86-64 | `windows` | `amd64` | `workflow-check_3.4.0_windows_amd64.exe` |
+| Linux x86-64 | `linux` | `amd64` | `workflow-check_5.0.0_linux_amd64` |
+| Linux ARM64 | `linux` | `arm64` | `workflow-check_5.0.0_linux_arm64` |
+| macOS Apple Silicon | `darwin` | `arm64` | `workflow-check_5.0.0_darwin_arm64` |
+| Windows x86-64 | `windows` | `amd64` | `workflow-check_5.0.0_windows_amd64.exe` |
 
 固定构建参数：
 
@@ -874,9 +874,9 @@ go build -trimpath -buildvcs=false -mod=readonly \
 
 ```text
 4 个平台 Binary
-agent-workflow-src-3.4.0.tar.gz
-agent-workflow-src-3.4.0.tar.gz.sha256
-agent-workflow-release-notes-3.4.0.md
+agent-workflow-src-5.0.0.tar.gz
+agent-workflow-src-5.0.0.tar.gz.sha256
+agent-workflow-release-notes-5.0.0.md
 ```
 
 校验元数据 2 项：
@@ -893,7 +893,7 @@ version.json
 
 ### 16.3 CNB 流水线
 
-`.cnb.yml` 只由精确 Tag `v3.4.0` 触发：
+`.cnb.yml` 中的发布配置针对精确 Tag `v5.0.0`；当前发布与镜像流水线已由 Owner 注释停用，V5.0.0 使用手工发布流程。以下为原流水线阶段，保留供未来恢复时参考：
 
 ```text
 toolchain → tag-guard → release-context → engine-verification → adoption-e2e
@@ -912,16 +912,16 @@ toolchain → tag-guard → release-context → engine-verification → adoption
 ### 16.4 发布脚本
 
 ```bash
-python3 scripts/release/release.py guard --repo . --tag v3.4.0
-python3 scripts/release/release.py repository --repo . --tag v3.4.0 --json
-python3 scripts/release/release.py build --repo . --output dist --tag v3.4.0
+python3 scripts/release/release.py guard --repo . --tag v5.0.0
+python3 scripts/release/release.py repository --repo . --tag v5.0.0 --json
+python3 scripts/release/release.py build --repo . --output dist --tag v5.0.0
 python3 scripts/release/release.py verify-assets --dir dist --repo . \
-  --version 3.4.0 --tag v3.4.0 --commit <40-hex>
+  --version 5.0.0 --tag v5.0.0 --commit <40-hex>
 python3 scripts/release/release.py snapshot --assets dist --out dist/expected
 python3 scripts/release/release.py verify-uploaded --assets dist/expected --downloads .
 python3 scripts/release/release.py promote-gate --stage pre-promote ...
 python3 scripts/release/release.py check-pipeline --config .cnb.yml --dir dist
-python3 scripts/release/release.py repro --repo . --tag v3.4.0
+python3 scripts/release/release.py repro --repo . --tag v5.0.0
 python3 scripts/release/release.py report --dir dist --reports dist/reports --require-all
 ```
 
@@ -933,7 +933,7 @@ python3 scripts/release/release.py report --dir dist --reports dist/reports --re
 
 | 路径 | 作用 |
 | --- | --- |
-| `.agent/VERSION` | 源码内容版本（当前 `3.4.0`） |
+| `.agent/VERSION` | 源码内容版本（当前 `5.0.0`） |
 | `.agent/README.md` | Runtime Namespace 索引与常用命令 |
 | `.agent/roles/*.md` | 七个角色 Prompt（各自职责、输入、Git 出站、交接出口） |
 | `.agent/specs/WorkflowAgentDirective.md` | Workflow 唯一入口；激活、必读链、启动协议、阶段推导 |
@@ -1034,8 +1034,8 @@ GOWORK=off go -C .agent/engine build -o ../bin/workflow-check ./cmd/workflow-che
 - 跨项目 Adoption 的完整真实项目试用尚未执行（DEFERRED BY OWNER）。
 - 安装/升级真实 E2E 只覆盖 Linux；macOS 与 Windows 原生未验证。
 - 发布 Binary 四平台交叉编译，只有 Linux x86-64 在构建环境真实运行。
-- `v3.4.0` Tag/Release/资产是否完成，以 CNB Release 与附件核验为准，文档不预先声称 GA。
-- V3.4 启动串、推导表、四字段交接是规范层约束；Engine 不解析交接块。
+- `v5.0.0` Tag/Release/资产是否完成，以 CNB Release 与附件核验为准，文档不预先声称 GA。
+- V5.0 启动串、推导表、四字段交接是规范层约束；Engine 不解析交接块。
 - 真实 LLM 冷启动验收需人工在独立 Session 执行并记录。
 
 ---

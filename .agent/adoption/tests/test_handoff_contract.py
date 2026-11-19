@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WorkflowHandoffContract 静态一致性检查（V3.4 四字段交接）。
+"""WorkflowHandoffContract 静态一致性检查（V5.0 四字段交接）。
 
 只检查文件与静态规范的一致性，不证明 LLM 在真实运行中遵守 Prompt，
 也不证明 Session / 作者身份或验证真的被执行。真实 Git / Gate 行为见

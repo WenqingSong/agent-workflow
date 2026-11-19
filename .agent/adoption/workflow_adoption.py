@@ -1,4 +1,4 @@
-"""Workflow V3 source distribution, first-install and upgrade tooling.
+"""Workflow V5 source distribution, first-install and upgrade tooling.
 
 This module is deliberately small and dependency-free (Python 3 standard
 library only).  It is not a package manager: it installs the framework files
@@ -2994,7 +2994,7 @@ def cmd_restore(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="workflow-adoption",
-        description="Workflow V3 source distribution, install, upgrade and provenance tool",
+        description="Workflow V5 source distribution, install, upgrade and provenance tool",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
